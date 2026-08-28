@@ -6,6 +6,7 @@
 #include "fluid_face.h"
 #include "watch.h"
 #include "watch_utility.h"
+#include "watch_common_display.h"
 #include "lis2dw.h"
 #include "fluid_face_data.h"
 
@@ -99,27 +100,13 @@
 // handling needed beyond seeding it into the target pattern.
 #define FLUID_COLON_PIXEL 0
 
-// The Custom_LCD_Character_Set bit patterns (see watch_common_display.h) for
-// just the letters weekday abbreviations ("MON".."SUN") actually use. Bit 0
-// is segment A .. bit 7 is segment H, same convention as fluid_digit_font.
-static uint8_t fluid_weekday_char_bits(char c) {
-    switch (c) {
-        case 'A': return 0b01110111;
-        case 'D': return 0b10001111;
-        case 'E': return 0b01111001;
-        case 'F': return 0b01110001;
-        case 'H': return 0b01110110;
-        case 'I': return 0b10001001;
-        case 'M': return 0b10110111;
-        case 'N': return 0b00110111;
-        case 'O': return 0b00111111;
-        case 'R': return 0b11000111;
-        case 'S': return 0b01101101;
-        case 'T': return 0b10000001;
-        case 'U': return 0b00111110;
-        case 'W': return 0b10111110;
-        default: return 0;
-    }
+// Segment bits for weekday abbreviation letters ("MON".."SUN", always uppercase A-Z from
+// watch_utility_get_long_weekday()). Custom_LCD_Character_Set (watch_common_display.h) is
+// already indexed by character - 0x20 with this exact bit convention (bit 0 = segment A
+// .. bit 7 = segment H, same as fluid_digit_font), so reuse it directly rather than
+// hand-copying a subset that could silently drift out of sync with the real font.
+static inline uint8_t fluid_weekday_char_bits(char c) {
+    return Custom_LCD_Character_Set[(uint8_t) c - 0x20];
 }
 
 static void fluid_set_char(uint8_t *out, const int8_t *pixels, int num_segs, uint8_t bits) {
@@ -337,6 +324,17 @@ static inline float fluid_raw_to_g(int16_t raw) {
 // the actual values, like the quiet-variation window below.
 static bool fluid_read_peak_g(float *out_x, float *out_y, float *out_z, float *out_peak) {
     lis2dw_fifo_t fifo = {0};
+    // The return value is the sensor's FIFO_SAMPLE_OVERRUN bit (see lis2dw.c): the 32-
+    // sample FIFO filled up completely and started overwriting its own oldest entries
+    // before we got here, so some samples -- possibly including the true peak of a knock
+    // -- are already gone by the time we read. There's nothing to recover after the fact
+    // (every other caller of lis2dw_read_fifo in this codebase discards it too), and the
+    // only real mitigation is polling often enough that 32 samples (320ms at 100Hz) can't
+    // fill up between reads. Note this is a known tradeoff of FLUID_MODE_CLOCK now
+    // ticking at 1Hz instead of FLUID_TICK_FREQUENCY (see fluid_set_mode) for battery
+    // life: a knock landing in the ~680ms gap the FIFO can't cover may go undetected while
+    // idle on the plain clock display. FLUID_MODE_FLUID/SETTLING still poll fast enough
+    // not to have this problem.
     lis2dw_read_fifo(&fifo);
     lis2dw_clear_fifo();
 
@@ -411,8 +409,16 @@ static int fluid_tilt_direction(float raw_x, float raw_y) {
     return dir;
 }
 
+// Requests the tick rate `mode` needs and switches to it: FLUID_MODE_CLOCK only redraws
+// once a second, but FLUID_MODE_FLUID/FLUID_MODE_SETTLING need FLUID_TICK_FREQUENCY to
+// poll the accelerometer and animate smoothly.
+static void fluid_set_mode(fluid_face_state_t *state, fluid_mode_t mode) {
+    state->mode = mode;
+    movement_request_tick_frequency(mode == FLUID_MODE_CLOCK ? 1 : FLUID_TICK_FREQUENCY);
+}
+
 static void fluid_enter_fluid_mode(fluid_face_state_t *state) {
-    state->mode = FLUID_MODE_FLUID;
+    fluid_set_mode(state, FLUID_MODE_FLUID);
     state->quiet_ticks = 0;
 }
 
@@ -427,7 +433,11 @@ void fluid_face_setup(uint8_t watch_face_index, void ** context_ptr) {
 void fluid_face_activate(void *context) {
     fluid_face_state_t *state = (fluid_face_state_t *) context;
 
-    movement_request_tick_frequency(FLUID_TICK_FREQUENCY);
+    // The sensor's range/filter/background-rate are global registers shared with every
+    // other accelerometer-using face -- save them so fluid_face_resign can put them back.
+    state->saved_accel_range = lis2dw_get_range();
+    state->saved_accel_filter = lis2dw_get_filter_type();
+    state->saved_accel_background_rate = movement_get_accelerometer_background_rate();
 
     movement_set_accelerometer_background_rate(ACCEL_DATA_RATE);
     lis2dw_set_range(ACCEL_RANGE);
@@ -435,12 +445,12 @@ void fluid_face_activate(void *context) {
     lis2dw_enable_fifo();
     lis2dw_clear_fifo();
 
-    state->mode = FLUID_MODE_CLOCK;
     state->quiet_ticks = 0;
     state->accel_window_pos = 0;
     state->accel_window_count = 0;
     state->indicator_key = -1;
     state->last_dir_index = DIR_S; // one-time initial guess, not a per-tick fallback
+    fluid_set_mode(state, FLUID_MODE_CLOCK);
     fluid_indicate_time_signal(state);
     fluid_indicate_alarm();
     fluid_check_battery_periodically(state, movement_get_local_date_time());
@@ -482,7 +492,7 @@ bool fluid_face_loop(movement_event_t event, void *context) {
             } else if (state->mode == FLUID_MODE_FLUID) {
                 state->quiet_ticks++;
                 if (state->quiet_ticks >= QUIET_TICKS_REQUIRED) {
-                    state->mode = FLUID_MODE_SETTLING;
+                    fluid_set_mode(state, FLUID_MODE_SETTLING);
                 }
             }
 
@@ -494,7 +504,7 @@ bool fluid_face_loop(movement_event_t event, void *context) {
                     fluid_step(state, dir_index);
                     break;
                 case FLUID_MODE_SETTLING:
-                    if (fluid_settle_step(state)) state->mode = FLUID_MODE_CLOCK;
+                    if (fluid_settle_step(state)) fluid_set_mode(state, FLUID_MODE_CLOCK);
                     break;
             }
 
@@ -506,7 +516,7 @@ bool fluid_face_loop(movement_event_t event, void *context) {
             // accelerometer: shatter, or -- if already shattered -- trigger
             // the return early instead of waiting out the quiet timer.
             if (state->mode == FLUID_MODE_FLUID) {
-                state->mode = FLUID_MODE_SETTLING;
+                fluid_set_mode(state, FLUID_MODE_SETTLING);
             } else {
                 fluid_enter_fluid_mode(state);
             }
@@ -553,8 +563,12 @@ movement_watch_face_advisory_t fluid_face_advise(void *context) {
 }
 
 void fluid_face_resign(void *context) {
-    (void) context;
+    fluid_face_state_t *state = (fluid_face_state_t *) context;
     movement_request_tick_frequency(1);
     lis2dw_clear_fifo();
     lis2dw_disable_fifo();
+    // Put the shared sensor registers back the way fluid_face_activate found them.
+    lis2dw_set_range(state->saved_accel_range);
+    lis2dw_set_filter_type(state->saved_accel_filter);
+    movement_set_accelerometer_background_rate(state->saved_accel_background_rate);
 }

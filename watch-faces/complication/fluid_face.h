@@ -11,7 +11,7 @@
  * hardware; the ALARM button stands in for it here, since the simulator has
  * no accelerometer) shatters ALL of that into a falling-sand "liquid" that
  * piles up in whichever direction the watch is currently tilted. Once
- * things go quiet for 3 seconds, the pile reassembles into the current
+ * things go quiet for 5 seconds, the pile reassembles into the current
  * time over a couple of seconds -- seconds (and weekday/day, if a boundary
  * happens to pass) keep advancing throughout, since the target it's
  * reassembling into is recomputed fresh every tick. The PM/24H/BELL
@@ -33,6 +33,7 @@
  */
 
 #include "movement.h"
+#include "lis2dw.h"
 
 #define FLUID_NUM_PIXELS 92
 #define FLUID_ACCEL_WINDOW_LEN 8 // must match FLUID_TICK_FREQUENCY in fluid_face.c (1 second of samples)
@@ -78,6 +79,13 @@ typedef struct {
     // Low-battery warning, checked once a day like clock_face's own.
     uint8_t last_battery_check; // day of month it was last checked, 0 = never
     bool battery_low;
+    // The sensor's range/filter/background-rate are global registers shared with every
+    // other accelerometer-using face (e.g. lis2dw_monitor_face, activity_logging_face).
+    // Saved on activate and put back on resign, so leaving this face doesn't silently
+    // leave the sensor at fluid_face's own settings for everyone else.
+    lis2dw_range_t saved_accel_range;
+    lis2dw_filter_t saved_accel_filter;
+    lis2dw_data_rate_t saved_accel_background_rate;
 } fluid_face_state_t;
 
 void fluid_face_setup(uint8_t watch_face_index, void ** context_ptr);
