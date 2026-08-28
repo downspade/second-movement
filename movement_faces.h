@@ -86,4 +86,6 @@
 #include "world_clock2_face.h"
 #include "hydration_face.h"
 #include "fluid_face.h"
+#include "wadokei_face.h"
+#include "kyureki_face.h"
 // New includes go above this line.

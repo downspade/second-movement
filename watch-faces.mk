@@ -61,4 +61,6 @@ SRCS += \
   ./watch-faces/complication/tide_face.c \
   ./watch-faces/clock/world_clock2_face.c \
   ./watch-faces/complication/fluid_face.c \
+  ./watch-faces/complication/wadokei_face.c \
+  ./watch-faces/complication/kyureki_face.c \
 # New watch faces go above this line.
