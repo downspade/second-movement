@@ -51,6 +51,11 @@ typedef struct {
     // same total amount. Lit for display whenever this is > 0.
     uint8_t filled[FLUID_NUM_PIXELS];
     fluid_mode_t mode;
+    // True from the moment Alarm forces FLUID_MODE_SETTLING (skipping the quiet timer) until
+    // that settle actually finishes and mode reaches FLUID_MODE_CLOCK. While true, EVENT_TICK's
+    // accelerometer check is skipped entirely, so residual physical motion right after the
+    // shake that caused the shatter can't immediately re-trigger and undo the manual recovery.
+    bool manual_recovery;
     uint16_t quiet_ticks; // consecutive ticks with no shake, while in FLUID_MODE_FLUID
     // Sitting still still reads ~1G (gravity), so "quiet" can't mean "low
     // magnitude" -- and it can't mean "magnitude isn't changing" either:
@@ -64,10 +69,6 @@ typedef struct {
     float accel_window_z[FLUID_ACCEL_WINDOW_LEN];
     uint8_t accel_window_pos;
     uint8_t accel_window_count;
-    // PM/24H redraw only when this (a combined clock-mode + AM/PM key, see
-    // fluid_draw_indicators) actually changes, instead of every tick, to
-    // avoid visibly flickering it for no reason.
-    int8_t indicator_key; // -1 = not drawn yet
     // Last fall direction (0..7, see the DIR_* constants in fluid_face.c).
     // When the tilt reading is too weak to trust, we keep this instead of
     // forcing a default -- there's no reason to believe "down" over

@@ -61,7 +61,7 @@ static const char *quarter_names[4] = {
 // use the plain name; quarters 3-4 (三つ/四つ) append "HAN" (半).
 // "Hi" (昼) would collide with position-0-only 'I' outside position 0, so it's "HiR".
 static const char *koku_prefix[12] = {
-    "AKTK1", "AKTK1", "AKTK1", "AKE  ", "ASA  ", "ASA  ",
+    "AKTKi", "AKTKi", "AKTKi", "AKE  ", "ASA  ", "ASA  ",
     "HIRU ", "HIRU ", "HIRU ", "KURE ", "YORU ", "YORU ",
 };
 static const uint8_t koku_digit[12] = { 9, 8, 7, 6, 5, 4, 9, 8, 7, 6, 5, 4 };

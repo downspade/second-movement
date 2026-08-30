@@ -100,6 +100,16 @@
 // handling needed beyond seeding it into the target pattern.
 #define FLUID_COLON_PIXEL 0
 
+// PM (com=3, seg=21) and 24H (com=2, seg=21) indicators, by the same com*23+seg ordering as
+// the colon above. Also just ordinary pixels in the target pattern now -- previously drawn
+// separately via watch_set_indicator() after the fact, which both kept them fixed/unaffected
+// by the shatter and fluid_step() effects (defeating the point of those) and, worse, got
+// silently wiped every tick by the grain loop redrawing every *other* pixel these two
+// addresses are also part of, since a cached "only redraw on change" guard skipped
+// reasserting them once the AM/PM or clock-mode key stopped changing.
+#define FLUID_PM_PIXEL (3 * 23 + 21)
+#define FLUID_24H_PIXEL (2 * 23 + 21)
+
 // Segment bits for weekday abbreviation letters ("MON".."SUN", always uppercase A-Z from
 // watch_utility_get_long_weekday()). Custom_LCD_Character_Set (watch_common_display.h) is
 // already indexed by character - 0x20 with this exact bit convention (bit 0 = segment A
@@ -119,9 +129,9 @@ static void fluid_set_char(uint8_t *out, const int8_t *pixels, int num_segs, uin
 }
 
 // Everything the display should show for the current moment: hours,
-// minutes, seconds, weekday, day of month, and the colon, all as one
-// pattern over the same 92-pixel pool. Recomputed fresh every tick (by both
-// the ordinary
+// minutes, seconds, weekday, day of month, the colon, and the PM/24H
+// indicators, all as one pattern over the same 92-pixel pool. Recomputed
+// fresh every tick (by both the ordinary
 // clock and the settle-back animation), so it always reflects whatever
 // time it is *right now* -- including while reassembling, so the target
 // itself keeps moving forward as real seconds (and occasionally weekday/
@@ -129,6 +139,7 @@ static void fluid_set_char(uint8_t *out, const int8_t *pixels, int num_segs, uin
 static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now) {
     uint8_t hour = now.unit.hour;
     bool is_12h = movement_clock_mode_24h() == MOVEMENT_CLOCK_MODE_12H;
+    bool is_pm = is_12h && now.unit.hour >= 12;
 
     if (is_12h) {
         hour %= 12;
@@ -160,6 +171,8 @@ static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now) {
     fluid_set_char(out, fluid_weekday3_pixel, 8, fluid_weekday_char_bits(weekday[2]));
 
     out[FLUID_COLON_PIXEL] = 1;
+    out[FLUID_PM_PIXEL] = is_pm ? 1 : 0;
+    out[FLUID_24H_PIXEL] = is_12h ? 0 : 1;
 }
 
 static void fluid_indicate_time_signal(fluid_face_state_t *state) {
@@ -194,30 +207,10 @@ static void fluid_check_battery_periodically(fluid_face_state_t *state, watch_da
     fluid_indicate_low_battery(state);
 }
 
-// PM/24H indicators: not digit segments, so they don't join the liquid
-// effect, and unlike weekday/day they're single bits, not worth animating.
-// Redrawn only when something actually changes, to avoid pointlessly
-// rewriting them 8 times a second. The key folds in the clock mode as well
-// as AM/PM, not just AM/PM alone -- otherwise switching between 12h and 24h
-// mode while is_pm's value happens not to change (e.g. it was AM) would
-// silently fail to update the 24H indicator.
-static void fluid_draw_indicators(fluid_face_state_t *state, watch_date_time_t now) {
-    movement_clock_mode_t mode = movement_clock_mode_24h();
-    bool is_pm = mode == MOVEMENT_CLOCK_MODE_12H && now.unit.hour >= 12;
-    int8_t key = (int8_t)(mode * 2 + (is_pm ? 1 : 0));
-    if (state->indicator_key == key) return;
-    state->indicator_key = key;
-
-    if (mode == MOVEMENT_CLOCK_MODE_12H) {
-        if (is_pm) watch_set_indicator(WATCH_INDICATOR_PM);
-        else watch_clear_indicator(WATCH_INDICATOR_PM);
-        watch_clear_indicator(WATCH_INDICATOR_24H);
-    } else {
-        watch_clear_indicator(WATCH_INDICATOR_PM);
-        watch_set_indicator(WATCH_INDICATOR_24H);
-    }
-}
-
+// PM and 24H are drawn purely as pixels FLUID_PM_PIXEL/FLUID_24H_PIXEL now (see
+// fluid_compute_time_pattern) -- ordinary members of the same 92-pixel pool this loop
+// already redraws in full every call, so they join the shatter/settle effects like every
+// other segment instead of sitting fixed on top of them via a separate watch_set_indicator().
 static void fluid_redraw(fluid_face_state_t *state) {
     for (int i = 0; i < FLUID_NUM_PIXELS; i++) {
         if (state->filled[i]) {
@@ -226,7 +219,6 @@ static void fluid_redraw(fluid_face_state_t *state) {
             watch_clear_pixel(fluid_pixel_com[i], fluid_pixel_seg[i]);
         }
     }
-    fluid_draw_indicators(state, movement_get_local_date_time());
 }
 
 // A neighbor can only accept an incoming grain if it exists and has room.
@@ -452,9 +444,9 @@ void fluid_face_activate(void *context) {
     lis2dw_clear_fifo();
 
     state->quiet_ticks = 0;
+    state->manual_recovery = false;
     state->accel_window_pos = 0;
     state->accel_window_count = 0;
-    state->indicator_key = -1;
     state->last_dir_index = DIR_S; // one-time initial guess, not a per-tick fallback
     fluid_set_mode(state, FLUID_MODE_CLOCK);
     fluid_indicate_time_signal(state);
@@ -486,19 +478,24 @@ bool fluid_face_loop(movement_event_t event, void *context) {
 
             bool shock_detected = peak_g >= ACCEL_TRIGGER_G;
 
-            if (shock_detected) {
-                fluid_enter_fluid_mode(state);
-            } else if (!quiet_now) {
-                if (state->mode == FLUID_MODE_SETTLING) {
-                    // still shaky -- abandon the half-finished reassembly and re-shatter.
+            // Skip all of this while manually recovering: residual physical motion right
+            // after the shake that caused the shatter would otherwise immediately re-trigger
+            // shock_detected or the "still shaky" branch below and undo the forced settle.
+            if (!state->manual_recovery) {
+                if (shock_detected) {
                     fluid_enter_fluid_mode(state);
+                } else if (!quiet_now) {
+                    if (state->mode == FLUID_MODE_SETTLING) {
+                        // still shaky -- abandon the half-finished reassembly and re-shatter.
+                        fluid_enter_fluid_mode(state);
+                    } else if (state->mode == FLUID_MODE_FLUID) {
+                        state->quiet_ticks = 0;
+                    }
                 } else if (state->mode == FLUID_MODE_FLUID) {
-                    state->quiet_ticks = 0;
-                }
-            } else if (state->mode == FLUID_MODE_FLUID) {
-                state->quiet_ticks++;
-                if (state->quiet_ticks >= QUIET_TICKS_REQUIRED) {
-                    fluid_set_mode(state, FLUID_MODE_SETTLING);
+                    state->quiet_ticks++;
+                    if (state->quiet_ticks >= QUIET_TICKS_REQUIRED) {
+                        fluid_set_mode(state, FLUID_MODE_SETTLING);
+                    }
                 }
             }
 
@@ -510,7 +507,10 @@ bool fluid_face_loop(movement_event_t event, void *context) {
                     fluid_step(state, dir_index);
                     break;
                 case FLUID_MODE_SETTLING:
-                    if (fluid_settle_step(state)) fluid_set_mode(state, FLUID_MODE_CLOCK);
+                    if (fluid_settle_step(state)) {
+                        state->manual_recovery = false; // recovery complete, resume normal sensing
+                        fluid_set_mode(state, FLUID_MODE_CLOCK);
+                    }
                     break;
             }
 
@@ -522,8 +522,11 @@ bool fluid_face_loop(movement_event_t event, void *context) {
             // accelerometer: shatter, or -- if already shattered -- trigger
             // the return early instead of waiting out the quiet timer.
             if (state->mode == FLUID_MODE_FLUID) {
+                state->manual_recovery = true;
                 fluid_set_mode(state, FLUID_MODE_SETTLING);
+                watch_buzzer_play_note(BUZZER_NOTE_C8, 50); // confirms the button (not shake) triggered this recovery
             } else {
+                state->manual_recovery = false;
                 fluid_enter_fluid_mode(state);
             }
             fluid_redraw(state);
@@ -540,6 +543,7 @@ bool fluid_face_loop(movement_event_t event, void *context) {
             // already "settled", so drop out of FLUID/SETTLING if we were
             // mid-effect when sleep started.
             state->mode = FLUID_MODE_CLOCK;
+            state->manual_recovery = false;
             fluid_compute_time_pattern(state->filled, movement_get_local_date_time());
             fluid_redraw(state);
             break;
