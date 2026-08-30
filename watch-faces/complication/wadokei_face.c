@@ -46,8 +46,8 @@
 // "TAiLS", blackjack_face.c's "WlN"/"TlE"). 'M' outside position 0 has a similar minor
 // quirk that the existing codebase accepts as-is (e.g. "Table"), so UMA is left uppercase.
 static const char *branch_names[12] = {
-    "NE   ", "USHi ", "TORA ", "U    ", "TATSU", "Mi   ",
-    "UMA  ", "HiTJi", "SARU ", "TORi ", "iNU  ", "i    ",
+    "NE   ", "USHI ", "TORA ", "U    ", "TATSU", "MI   ",
+    "UMA  ", "HITJ1", "SARU ", "TOR1 ", "INU  ", "I    ",
 };
 
 // One quarter name per position, spelled out in full (一つ/二つ/三つ/四つ), 6 characters
@@ -61,8 +61,8 @@ static const char *quarter_names[4] = {
 // use the plain name; quarters 3-4 (三つ/四つ) append "HAN" (半).
 // "Hi" (昼) would collide with position-0-only 'I' outside position 0, so it's "HiR".
 static const char *koku_prefix[12] = {
-    "AKA", "AKA", "AKA", "AKE", "ASA", "ASA",
-    "HiR", "HiR", "HiR", "KUR", "YOR", "YOR",
+    "AKTK1", "AKTK1", "AKTK1", "AKE  ", "ASA  ", "ASA  ",
+    "HIRU ", "HIRU ", "HIRU ", "KURE ", "YORU ", "YORU ",
 };
 static const uint8_t koku_digit[12] = { 9, 8, 7, 6, 5, 4, 9, 8, 7, 6, 5, 4 };
 
@@ -164,165 +164,7 @@ static void _wadokei_compute_span(wadokei_state_t *state, movement_location_t lo
     state->valid = true;
 }
 
-static int16_t _wadokei_latlon_from_struct(wadokei_lat_lon_settings_t val) {
-    int16_t retval = (val.sign ? -1 : 1) *
-                        (
-                            val.hundreds * 10000 +
-                            val.tens * 1000 +
-                            val.ones * 100 +
-                            val.tenths * 10 +
-                            val.hundredths
-                        );
-    return retval;
-}
-
-static wadokei_lat_lon_settings_t _wadokei_struct_from_latlon(int16_t val) {
-    wadokei_lat_lon_settings_t retval;
-    retval.sign = val < 0;
-    val = abs(val);
-    retval.hundredths = val % 10;
-    val /= 10;
-    retval.tenths = val % 10;
-    val /= 10;
-    retval.ones = val % 10;
-    val /= 10;
-    retval.tens = val % 10;
-    val /= 10;
-    retval.hundreds = val % 10;
-    return retval;
-}
-
-static void _wadokei_persist_location(movement_location_t new_location) {
-    movement_location_t maybe_location = {0};
-    filesystem_read_file("location.u32", (char *) &maybe_location.reg, sizeof(movement_location_t));
-    if (new_location.reg != maybe_location.reg) {
-        filesystem_write_file("location.u32", (char *) &new_location.reg, sizeof(movement_location_t));
-    }
-}
-
-static void _wadokei_update_location_register(wadokei_state_t *state) {
-    if (state->location_changed) {
-        movement_location_t movement_location;
-        movement_location.bit.latitude = _wadokei_latlon_from_struct(state->working_latitude);
-        movement_location.bit.longitude = _wadokei_latlon_from_struct(state->working_longitude);
-        _wadokei_persist_location(movement_location);
-        state->location_changed = false;
-        state->valid = false; // force a fresh span recompute with the new location
-    }
-}
-
-// Custom-LCD-only digit editor for latitude/longitude, copied (and trimmed of the named-
-// preset cycling this face doesn't use) from sunrise_sunset_face.c's settings pages.
-static void _wadokei_update_settings_display(movement_event_t event, wadokei_state_t *state) {
-    watch_clear_display();
-
-    switch (state->page) {
-        case 0:
-            return;
-        case 1: // latitude
-            watch_display_text_with_fallback(WATCH_POSITION_TOP_LEFT, "LAT", "L");
-            watch_set_decimal_if_available();
-            watch_display_character('0' + state->working_latitude.tens, 4);
-            watch_display_character('0' + state->working_latitude.ones, 5);
-            watch_display_character('0' + state->working_latitude.tenths, 6);
-            watch_display_character('0' + state->working_latitude.hundredths, 7);
-            watch_display_character('#', 8);
-            watch_display_character(state->working_latitude.sign ? 'S' : 'N', 9);
-            if (event.subsecond % 2) {
-                watch_display_character(' ', 4 + state->active_digit);
-                if (state->active_digit == 4) watch_display_character(' ', 9);
-            }
-            break;
-        case 2: // longitude
-            watch_display_text_with_fallback(WATCH_POSITION_TOP_LEFT, "LON", "L");
-            watch_set_decimal_if_available();
-            if (state->working_longitude.hundreds == 1) watch_set_pixel(0, 22);
-            watch_display_character('0' + state->working_longitude.tens, 4);
-            watch_display_character('0' + state->working_longitude.ones, 5);
-            watch_display_character('0' + state->working_longitude.tenths, 6);
-            watch_display_character('0' + state->working_longitude.hundredths, 7);
-            watch_display_character('#', 8);
-            watch_display_character(state->working_longitude.sign ? 'W' : 'E', 9);
-            if (event.subsecond % 2) {
-                watch_display_character(' ', 4 + state->active_digit);
-                if (state->active_digit == 0) watch_clear_pixel(0, 22);
-                if (state->active_digit == 4) watch_display_character(' ', 9);
-            }
-            break;
-    }
-}
-
-static void _wadokei_advance_digit(wadokei_state_t *state) {
-    state->location_changed = true;
-    switch (state->page) {
-        case 1: // latitude
-            switch (state->active_digit) {
-                case 0:
-                    state->working_latitude.tens = (state->working_latitude.tens + 1) % 10;
-                    if (abs(_wadokei_latlon_from_struct(state->working_latitude)) > 9000) {
-                        state->working_latitude.ones = 0;
-                        state->working_latitude.tenths = 0;
-                        state->working_latitude.hundredths = 0;
-                    }
-                    break;
-                case 1:
-                    state->working_latitude.ones = (state->working_latitude.ones + 1) % 10;
-                    if (abs(_wadokei_latlon_from_struct(state->working_latitude)) > 9000) state->working_latitude.ones = 0;
-                    break;
-                case 2:
-                    state->working_latitude.tenths = (state->working_latitude.tenths + 1) % 10;
-                    if (abs(_wadokei_latlon_from_struct(state->working_latitude)) > 9000) state->working_latitude.tenths = 0;
-                    break;
-                case 3:
-                    state->working_latitude.hundredths = (state->working_latitude.hundredths + 1) % 10;
-                    if (abs(_wadokei_latlon_from_struct(state->working_latitude)) > 9000) state->working_latitude.hundredths = 0;
-                    break;
-                case 4:
-                    state->working_latitude.sign++;
-                    break;
-            }
-            break;
-        case 2: // longitude
-            switch (state->active_digit) {
-                case 0:
-                    state->working_longitude.tens++;
-                    if (state->working_longitude.tens >= 10) {
-                        state->working_longitude.tens = 0;
-                        state->working_longitude.hundreds++;
-                    }
-                    if (abs(_wadokei_latlon_from_struct(state->working_longitude)) > 18000) {
-                        state->working_longitude.hundreds = 0;
-                        state->working_longitude.tens = 0;
-                        state->working_longitude.ones = 0;
-                        state->working_longitude.tenths = 0;
-                        state->working_longitude.hundredths = 0;
-                    }
-                    break;
-                case 1:
-                    state->working_longitude.ones = (state->working_longitude.ones + 1) % 10;
-                    if (abs(_wadokei_latlon_from_struct(state->working_longitude)) > 18000) state->working_longitude.ones = 0;
-                    break;
-                case 2:
-                    state->working_longitude.tenths = (state->working_longitude.tenths + 1) % 10;
-                    if (abs(_wadokei_latlon_from_struct(state->working_longitude)) > 18000) state->working_longitude.tenths = 0;
-                    break;
-                case 3:
-                    state->working_longitude.hundredths = (state->working_longitude.hundredths + 1) % 10;
-                    if (abs(_wadokei_latlon_from_struct(state->working_longitude)) > 18000) state->working_longitude.hundredths = 0;
-                    break;
-                case 4:
-                    state->working_longitude.sign++;
-                    break;
-            }
-            break;
-    }
-}
-
 static void _wadokei_face_update(wadokei_state_t *state) {
-    // The lat/lon settings screen lights this fixed decimal-point pixel; make sure it's
-    // off whenever we're back on the normal (non-settings) display.
-    watch_clear_decimal_if_available();
-
     movement_location_t location = {0};
     filesystem_read_file("location.u32", (char *) &location.reg, sizeof(movement_location_t));
     if (location.reg == 0) {
@@ -367,7 +209,7 @@ static void _wadokei_face_update(wadokei_state_t *state) {
     bool half = quarter_index >= 2;
     char buf[7];
     snprintf(buf, sizeof(buf), half ? "%dTUHAN" : "%dTU   ", digit);
-    watch_display_text_with_fallback(WATCH_POSITION_TOP_LEFT, (char *)prefix, (char *)prefix);
+    watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)prefix, (char *)prefix);
     watch_display_text(WATCH_POSITION_BOTTOM, buf);
 }
 
@@ -382,11 +224,6 @@ void wadokei_face_setup(uint8_t watch_face_index, void ** context_ptr) {
 void wadokei_face_activate(void *context) {
     if (watch_sleep_animation_is_running()) watch_stop_sleep_animation();
     wadokei_state_t *state = (wadokei_state_t *)context;
-
-    movement_location_t movement_location = {0};
-    filesystem_read_file("location.u32", (char *) &movement_location.reg, sizeof(movement_location_t));
-    state->working_latitude = _wadokei_struct_from_latlon(movement_location.bit.latitude);
-    state->working_longitude = _wadokei_struct_from_latlon(movement_location.bit.longitude);
 
     // Force a fresh recompute on every activation: the cached span may be stale if the
     // user changed the location or timezone while this face wasn't active.
@@ -403,64 +240,19 @@ bool wadokei_face_loop(movement_event_t event, void *context) {
             break;
         case EVENT_TICK:
         case EVENT_LOW_ENERGY_UPDATE:
-            if (event.event_type == EVENT_LOW_ENERGY_UPDATE && state->page == 0 && !watch_sleep_animation_is_running()) {
+            if (event.event_type == EVENT_LOW_ENERGY_UPDATE && !watch_sleep_animation_is_running()) {
                 watch_start_sleep_animation(1000);
             }
-            if (state->page == 0) _wadokei_face_update(state);
-            else _wadokei_update_settings_display(event, state);
+            _wadokei_face_update(state);
             break;
         case EVENT_LIGHT_BUTTON_DOWN:
-            if (state->page) {
-                state->active_digit++;
-                if (state->active_digit > 4) {
-                    state->active_digit = 0;
-                    state->page = (state->page + 1) % 3;
-                    _wadokei_update_location_register(state);
-                }
-                if (state->page == 0) {
-                    movement_request_tick_frequency(1);
-                    _wadokei_face_update(state);
-                } else {
-                    _wadokei_update_settings_display(event, state);
-                }
-            } else {
-                // Not in settings: fall back to the normal LIGHT-button behavior
-                // (illuminate the LED) instead of silently swallowing the event.
-                movement_illuminate_led();
-            }
+            // Not handled: fall back to the normal LIGHT-button behavior (illuminate
+            // the LED) instead of silently swallowing the event.
+            movement_illuminate_led();
             break;
         case EVENT_ALARM_BUTTON_UP:
-            if (state->page) {
-                _wadokei_advance_digit(state);
-                _wadokei_update_settings_display(event, state);
-            } else {
-                state->mode = !state->mode;
-                _wadokei_face_update(state);
-            }
-            break;
-        case EVENT_ALARM_LONG_PRESS:
-            if (state->page == 0) {
-                state->page = 1;
-                state->active_digit = 0;
-                watch_clear_display();
-                movement_request_tick_frequency(4);
-                _wadokei_update_settings_display(event, state);
-            } else {
-                state->page = 0;
-                state->active_digit = 0;
-                movement_request_tick_frequency(1);
-                _wadokei_update_location_register(state);
-                _wadokei_face_update(state);
-            }
-            break;
-        case EVENT_TIMEOUT:
-            if (state->page) {
-                state->page = 0;
-                state->active_digit = 0;
-                movement_request_tick_frequency(1);
-                _wadokei_update_location_register(state);
-                _wadokei_face_update(state);
-            }
+            state->mode = !state->mode;
+            _wadokei_face_update(state);
             break;
         default:
             return movement_default_loop_handler(event);
@@ -472,8 +264,4 @@ bool wadokei_face_loop(movement_event_t event, void *context) {
 void wadokei_face_resign(void *context) {
     wadokei_state_t *state = (wadokei_state_t *)context;
     state->mode = 0;
-    state->page = 0;
-    state->active_digit = 0;
-    _wadokei_update_location_register(state);
-    watch_clear_decimal_if_available();
 }

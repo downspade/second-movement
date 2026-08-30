@@ -33,29 +33,16 @@
  * each half is split into the six zodiacal double-hours (十二支), and each of those
  * is further split into four quarters (一つ〜四つ).
  *
- * Reads/writes the shared location register ("location.u32", the same file
- * sunrise_sunset_face and moon_phase_face use). The location-entry UI below is copied
- * from sunrise_sunset_face.c's settings pages (digit editor for custom LCD), minus its
- * named-preset cycling, which this face doesn't need.
+ * Reads the shared location register ("location.u32", the same file sunrise_sunset_face
+ * and moon_phase_face use); set it via set_location_face rather than in this face.
  *
  * Press ALARM (short) to toggle between two ways of naming the same current branch/quarter:
  *   0: traditional bell-count "koku" name (暁九つ/明六つ/朝五つ/昼九つ/暮六つ/夜四つ
  *      etc.), with "半" for the second half of each branch
  *   1: zodiacal branch (十二支) + quarter (一つ〜四つ)
- * Press ALARM (long) to enter/exit the latitude/longitude entry screen; while entering,
- * LIGHT moves to the next digit and ALARM (short) increments the current digit.
  */
 
 #include "movement.h"
-
-typedef struct {
-    uint8_t sign: 1;
-    uint8_t hundreds: 5;
-    uint8_t tens: 5;
-    uint8_t ones: 4;
-    uint8_t tenths: 4;
-    uint8_t hundredths: 4;
-} wadokei_lat_lon_settings_t;
 
 typedef struct {
     uint32_t span_start_unix;  // start of the current branch span (unix time)
@@ -63,12 +50,6 @@ typedef struct {
     bool is_daytime;
     bool valid;                // false if no location set, or __sunriset__ can't resolve (polar day/night)
     uint8_t mode;               // 0 = koku bell-count display, 1 = 十二支 branch/quarter display
-
-    uint8_t page;               // 0 = normal display, 1 = editing latitude, 2 = editing longitude
-    uint8_t active_digit;
-    bool location_changed;
-    wadokei_lat_lon_settings_t working_latitude;
-    wadokei_lat_lon_settings_t working_longitude;
 } wadokei_state_t;
 
 void wadokei_face_setup(uint8_t watch_face_index, void ** context_ptr);
