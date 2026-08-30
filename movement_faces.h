@@ -33,7 +33,7 @@
 #include "stopwatch_face.h"
 #include "fast_stopwatch_face.h"
 #include "sunrise_sunset_face.h"
-#include "moon_phase_face.h"
+#include "moon_phase_ascii_face.h"
 #include "days_since_face.h"
 #include "character_set_face.h"
 #include "accelerometer_status_face.h"
@@ -73,6 +73,7 @@
 #include "wareki_face.h"
 #include "deadline_face.h"
 #include "wordle_face.h"
+#include "minute_repeater_face.h"
 #include "blackjack_face.h"
 #include "endless_runner_face.h"
 #include "higher_lower_game_face.h"
@@ -88,4 +89,5 @@
 #include "fluid_face.h"
 #include "wadokei_face.h"
 #include "kyureki_face.h"
+#include "set_location_face.h"
 // New includes go above this line.

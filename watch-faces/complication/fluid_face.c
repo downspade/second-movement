@@ -128,8 +128,9 @@ static void fluid_set_char(uint8_t *out, const int8_t *pixels, int num_segs, uin
 // day) pass.
 static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now) {
     uint8_t hour = now.unit.hour;
+    bool is_12h = movement_clock_mode_24h() == MOVEMENT_CLOCK_MODE_12H;
 
-    if (movement_clock_mode_24h() == MOVEMENT_CLOCK_MODE_12H) {
+    if (is_12h) {
         hour %= 12;
         if (hour == 0) hour = 12;
     }
@@ -144,7 +145,12 @@ static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now) {
                                        fluid_minutes_tens_pixel, fluid_minutes_ones_pixel,
                                        fluid_seconds_tens_pixel, fluid_seconds_ones_pixel,
                                        fluid_day_tens_pixel, fluid_day_ones_pixel };
+    // In 12h mode, hour is 1-12, so a tens digit of 0 (1-9 o'clock) is a
+    // leading zero, not a real digit -- suppress it, same as clock_face's
+    // "%2d" (space-padded, not zero-padded) hour format.
+    bool suppress_hour_tens = is_12h && digit_value[0] == 0;
     for (int d = 0; d < 8; d++) {
+        if (d == 0 && suppress_hour_tens) continue;
         fluid_set_char(out, digit_pixels[d], 7, fluid_digit_font[digit_value[d]]);
     }
 

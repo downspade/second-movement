@@ -10,7 +10,7 @@ SRCS += \
   ./watch-faces/complication/stopwatch_face.c \
   ./watch-faces/complication/fast_stopwatch_face.c \
   ./watch-faces/complication/sunrise_sunset_face.c \
-  ./watch-faces/complication/moon_phase_face.c \
+  ./watch-faces/complication/moon_phase_ascii_face.c \
   ./watch-faces/complication/days_since_face.c \
   ./watch-faces/complication/breathing_face.c \
   ./watch-faces/complication/squash_face.c \
@@ -18,6 +18,7 @@ SRCS += \
   ./watch-faces/complication/totp_lfs_face.c \
   ./watch-faces/complication/tally_face.c \
   ./watch-faces/complication/wordle_face.c \
+  ./watch-faces/complication/minute_repeater_face.c \
   ./watch-faces/demo/all_segments_face.c \
   ./watch-faces/demo/character_set_face.c \
   ./watch-faces/demo/light_sensor_face.c \
@@ -29,6 +30,7 @@ SRCS += \
   ./watch-faces/sensor/activity_logging_face.c \
   ./watch-faces/sensor/voltage_face.c \
   ./watch-faces/settings/set_time_face.c \
+  ./watch-faces/settings/set_location_face.c \
   ./watch-faces/settings/settings_face.c \
   ./watch-faces/settings/finetune_face.c \
   ./watch-faces/settings/nanosec_face.c \
