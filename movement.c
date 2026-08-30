@@ -1003,12 +1003,11 @@ void app_init(void) {
     movement_state.has_thermistor = thermistor_driver_init();
 
     bool settings_file_exists = filesystem_file_exists("settings.u32");
-    movement_settings_t maybe_settings;
-    if (settings_file_exists && maybe_settings.bit.version == 0) {
+    movement_settings_t maybe_settings = {0};
+    bool settings_file_read_ok = settings_file_exists &&
         filesystem_read_file("settings.u32", (char *) &maybe_settings, sizeof(movement_settings_t));
-    }
 
-    if (settings_file_exists && maybe_settings.bit.version == 0) {
+    if (settings_file_read_ok && maybe_settings.bit.version == 0) {
         // If settings file exists and has a valid version, restore it!
         movement_state.settings.reg = maybe_settings.reg;
     } else {

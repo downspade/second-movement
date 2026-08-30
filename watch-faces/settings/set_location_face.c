@@ -108,8 +108,11 @@ static const location_city_t _cities_p12[] = { {"AUCKLD", -3685, 17476}, {"SUVA"
 // abbreviation zone where one exists (e.g. MSK->Moscow, JST->Tokyo), and among same-offset
 // candidates preferring one that doesn't observe DST, since this face's own offset list has no
 // DST concept. utz has no zone at exactly +11 or -1, so SBT and AZO fall back to the nearest
-// available zone (Guam/+10 and UTC/0 respectively); picking either neighbor is equally "wrong"
-// by an hour, so which way was arbitrary.
+// available zone (Guam/+10 and London/0 respectively); picking either neighbor is equally
+// "wrong" by an hour, so which way was arbitrary. AZO specifically falls back to London
+// rather than UTC: every utz_index here must stay unique, since
+// _set_location_zone_index_for_utz() reverse-maps a utz_index back to a single row -- reusing
+// UTC (already GMT's own utz_index) would make a confirmed AZO always redisplay as GMT.
 static const location_timezone_t location_timezones[] = {
     ZONE("GMT", 0, _cities_0, UTZ_UTC),
     ZONE("CET", 1, _cities_p1, UTZ_LAGOS),
@@ -134,11 +137,23 @@ static const location_timezone_t location_timezones[] = {
     ZONE("AST", -4, _cities_m4, UTZ_HALIFAX),
     ZONE("BRT", -3, _cities_m3, UTZ_SAO_PAULO),
     ZONE("FNT", -2, _cities_m2, UTZ_NUUK),
-    ZONE("AZO", -1, _cities_m1, UTZ_UTC),     // no -1 zone in utz; nearest is UTC at 0
+    ZONE("AZO", -1, _cities_m1, UTZ_LONDON),  // no -1 zone in utz; nearest is London at 0 (see above re: uniqueness)
 };
 #define NUM_TIMEZONES (sizeof(location_timezones) / sizeof(location_timezone_t))
 
 #undef ZONE
+
+// Reverse-maps a utz/zones.h index (from movement_get_timezone_index()) back to its
+// location_timezones[] entry, so set_location_face_activate() can start the UI from whatever
+// zone is actually currently set instead of always resetting to GMT. Falls back to 0 (GMT) if
+// nothing here maps to it (e.g. a timezone set some other way, like set_time_face's own zone
+// cycling) -- an imperfect but harmless default, same as before this reverse mapping existed.
+static uint8_t _set_location_zone_index_for_utz(uint8_t utz_index) {
+    for (size_t i = 0; i < NUM_TIMEZONES; i++) {
+        if (location_timezones[i].utz_index == utz_index) return (uint8_t) i;
+    }
+    return 0;
+}
 
 static void persist_location_to_filesystem(movement_location_t new_location) {
     movement_location_t maybe_location = {0};
@@ -357,10 +372,12 @@ void set_location_face_setup(uint8_t watch_face_index, void ** context_ptr) {
 void set_location_face_activate(void *context) {
     set_location_state_t *state = (set_location_state_t *) context;
     if (watch_sleep_animation_is_running()) watch_stop_sleep_animation();
-    // Always start over at timezone select -- nothing is written until stage 2 completes, so
-    // there's no in-progress edit worth preserving across a visit to another face.
+    // Always start over at timezone select -- but from whichever zone is actually currently
+    // set (reverse-mapped from movement's timezone index), not always GMT. Without this,
+    // leaving the face after confirming e.g. Tokyo and coming straight back would show GMT
+    // again, looking like the change hadn't taken -- even though it had.
     state->stage = 0;
-    state->zone_index = 0;
+    state->zone_index = _set_location_zone_index_for_utz((uint8_t) movement_get_timezone_index());
     state->city_index = 0;
     state->page = 0;
     state->active_digit = 0;
@@ -403,8 +420,15 @@ bool set_location_face_loop(movement_event_t event, void *context) {
             switch (state->stage) {
                 case 0:
                     movement_set_timezone_index(location_timezones[state->zone_index].utz_index);
-                    _set_location_persist_current(state); // seed location.u32 with the zone's first city
-                    state->changed = false;
+                    // Only overwrite location.u32 with the zone's first city if Alarm actually
+                    // picked a zone this visit. Since activate() now starts zone_index at the
+                    // wearer's actual current zone (not always GMT), simply opening this face
+                    // to check the current zone and pressing Light out of habit must not
+                    // clobber an already fine-tuned location with the zone's generic city.
+                    if (state->changed) {
+                        _set_location_persist_current(state);
+                        state->changed = false;
+                    }
                     state->stage = 1;
                     state->city_index = 0;
                     break;
@@ -426,11 +450,11 @@ bool set_location_face_loop(movement_event_t event, void *context) {
                         if (state->page == 0) {
                             state->page = 1; // move from latitude to longitude
                         } else {
-                            // finished longitude: write it out and go back to city select
+                            // finished longitude: write it out and go back to timezone select
                             _set_location_persist_current(state);
                             state->changed = false;
                             movement_request_tick_frequency(1);
-                            state->stage = 1;
+                            state->stage = 0;
                             state->page = 0;
                         }
                     }
@@ -479,6 +503,13 @@ void set_location_face_resign(void *context) {
         _set_location_persist_current(state);
         state->changed = false;
     }
+
+    // movement_set_timezone_index() (here and at the stage-0 confirm in the loop handler
+    // above) only updates the in-RAM setting; without this it's never written to
+    // settings.u32, so it would silently revert to whatever was last stored there on the
+    // next boot. set_time_face_resign() and settings_face_resign() both do this too on
+    // every exit -- it's a no-op write if nothing actually changed.
+    movement_store_settings();
 
     state->stage = 0;
     state->page = 0;

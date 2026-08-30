@@ -40,9 +40,11 @@
  * an age of 5.2 as "  52 ").
  *
  * Hours/minutes positions: a 4-character bar that sweeps as the moon waxes
- * and wanes -- "[   " a waxing crescent, "[=  " first quarter, "[== " waxing
- * gibbous, "[==]" full, " ==]" waning gibbous, "  =]" last quarter, "   ]"
- * a waning crescent, and blank for new. Waxes from the right for the
+ * and wanes, 10 states per cycle -- blank for new, "   |" a hair-thin sliver
+ * just starting to wax, "[   " a waxing crescent, "[=  " first quarter,
+ * "[== " waxing gibbous, "[==]" full, " ==]" waning gibbous, "  =]" last
+ * quarter, "   ]" a waning crescent, and "|   " a sliver having just
+ * finished waning, back to blank for new. Waxes from the right for the
  * (default) northern hemisphere, mirrored for the southern hemisphere.
  *
  * Seconds position: the day of the month.
@@ -76,14 +78,13 @@
  * below does. Eclipses only happen at full moon, so on an eclipse day the "[==]" bar is
  * otherwise unchanged, except for one of two things:
  *
- *  - Partial/total eclipse: part of the bar blinks instead of staying lit,
- *    in 6 magnitude-scaled steps -- from just the '[' bracket cell at the
- *    lowest magnitudes, through the hour digit turning into a second '['
- *    (by way of a "vertical line only" half-step), then the minute digit
- *    similarly turning into a second ']', up to all 4 cells (a comfortably
- *    total eclipse) at the highest.
- *  - Penumbral eclipse (no umbral magnitude, so no bar shape to size):
- *    the colon blinks instead.
+ *  - Partial/total eclipse with a nonzero magnitude: the bar blinks once a second between
+ *    the ordinary full "[==]" and a plain moon-phase-style shape sized to the fraction NOT
+ *    covered -- e.g. 50% magnitude blinks between "[==]" and "[=  " (a plain half moon), a
+ *    total eclipse blinks between "[==]" and blank (fully covered).
+ *  - Penumbral eclipse (no umbral magnitude, so no fraction to size a shape by), or a
+ *    partial/total eclipse whose magnitude happens to be 0%: the bar stays steadily "[==]"
+ *    and the colon blinks instead.
  */
 
 #include "movement.h"
@@ -92,8 +93,8 @@ typedef struct {
     uint32_t offset;
     bool southern_hemisphere;
     bool location_set;
-    uint8_t eclipse_level; // 0 = no partial/total eclipse today (see _eclipse_bar_mask), else 1-6
-    bool blink_on; // current blink phase while eclipse_level > 0, toggles every second
+    uint8_t eclipse_bar_magnitude; // 0 = bar doesn't blink today, else the magnitude (1-100+) sizing the blink's alternate shape
+    bool blink_on; // current blink phase while eclipse_bar_magnitude > 0, toggles every second
     bool calendar_mode; // browsing the eclipse calendar (Alarm long press) instead of the moon phase
     size_t calendar_index; // which entry of lunar_eclipses[] calendar mode is showing
 } moon_phase_ascii_state_t;

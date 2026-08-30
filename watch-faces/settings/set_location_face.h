@@ -43,8 +43,9 @@
  *    digit's value, depending on stage.
  *  - Light (short): move to the next item -- next stage (0->1->2), or
  *    within stage 2, the next digit (rolling latitude into longitude after
- *    its last digit, then writing location.u32 and returning to stage 1
- *    after longitude's last digit).
+ *    its last digit, then writing location.u32 and returning to stage 0
+ *    after longitude's last digit, so re-confirming the timezone is the
+ *    first thing that happens on the next pass through).
  *  - Alarm (held): reset the current value to 0 -- zone, city, or the
  *    active digit, depending on stage.
  *  - Light (held): illuminate the display, same as everywhere else.

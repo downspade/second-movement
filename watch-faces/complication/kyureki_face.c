@@ -39,7 +39,7 @@
 // codebase accepts as-is elsewhere (e.g. periodic_table_face.c's "Table"), so those are
 // left uppercase here too.
 static const char *rokuyo_names[6] = {
-    "SNSYO", "TMBKi", "SEMBU", "BUTMT", "TAiAN", "SHKKO",
+    "SENSY", "TOMBK", "SEMBU", "BTMTS", "TAIAN", "SHAKK",
 };
 
 static uint16_t _kyureki_day_of_year(uint8_t month, uint8_t day, uint16_t year) {
