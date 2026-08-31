@@ -166,12 +166,14 @@ static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now, bool
                                        fluid_minutes_tens_pixel, fluid_minutes_ones_pixel,
                                        fluid_seconds_tens_pixel, fluid_seconds_ones_pixel,
                                        fluid_day_tens_pixel, fluid_day_ones_pixel };
-    // In 12h mode, hour is 1-12, so a tens digit of 0 (1-9 o'clock) is a
-    // leading zero, not a real digit -- suppress it, same as clock_face's
-    // "%2d" (space-padded, not zero-padded) hour format.
-    bool suppress_hour_tens = is_12h && digit_value[0] == 0;
+    // clock_face zero-pads hour and day only in MOVEMENT_CLOCK_MODE_024H ("24 hour clock with
+    // leading zero") -- in plain 12H or 24H mode both use "%2d" (space-padded), so a tens
+    // digit of 0 is a leading zero, not a real digit, and gets suppressed the same way here.
+    bool zero_pad = movement_clock_mode_24h() == MOVEMENT_CLOCK_MODE_024H;
+    bool suppress_hour_tens = !zero_pad && digit_value[0] == 0;
+    bool suppress_day_tens = !zero_pad && digit_value[6] == 0;
     for (int d = 0; d < 8; d++) {
-        if (d == 0 && suppress_hour_tens) continue;
+        if ((d == 0 && suppress_hour_tens) || (d == 6 && suppress_day_tens)) continue;
         fluid_set_char(out, digit_pixels[d], 7, fluid_digit_font[digit_value[d]]);
     }
 
