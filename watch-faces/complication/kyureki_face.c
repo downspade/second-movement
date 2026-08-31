@@ -130,7 +130,13 @@ static void _kyureki_face_update(kyureki_state_t *state) {
         return;
     }
 
-    uint8_t rokuyo_index = (state->month_number + state->day_of_month) % 6;
+    // Month m's 1st day is at sequence position (m-1)%6 (month 1 and 7 both start the
+    // cycle at 先勝/index 0, month 2 and 8 at 友引/index 1, etc.), and day d of that month
+    // is (d-1) further along -- combined, (m-1)+(d-1) = m+d-2. Plain (m+d)%6 (no "-2") is
+    // off by a constant +2 for every date: e.g. lunar 7/19 (index 0 -> 先勝, confirmed
+    // against an independent lunar calendar reference) came out as (7+19)%6=2 -> 先負
+    // instead. month_number/day_of_month are always >=1, so m+d-2 never goes negative.
+    uint8_t rokuyo_index = (state->month_number + state->day_of_month - 2) % 6;
     watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)rokuyo_names[rokuyo_index], (char *)rokuyo_names[rokuyo_index]);
 
     // "month.day", decimal point lit between them; last 2 chars are "Ud" for a leap month.

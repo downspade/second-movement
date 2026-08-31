@@ -37,7 +37,7 @@
  * lines are shown together, always.
  *
  * TOP (5 chars, custom LCD): 六曜 (rokuyo, the traditional 6-day lucky/unlucky cycle),
- * derived from the lunar month and day (index = (month + day) % 6; leap months use the
+ * derived from the lunar month and day (index = (month + day - 2) % 6; leap months use the
  * same index as their preceding month, per convention).
  * BOTTOM (6 chars): lunar month.day (e.g. " 8.28"), decimal point lit between them; the
  * last 2 characters show "Ud" when the current month is a leap month, else blank.
