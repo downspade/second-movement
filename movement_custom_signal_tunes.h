@@ -226,6 +226,50 @@ int8_t signal_tune[] = {
 };
 #endif // SIGNAL_TUNE_JURASSIC_PARK
 
+#ifdef SIGNAL_TUNE_DQ_LEVELUP
+// Dragon Quest's level-up fanfare: Fa-Fa-Fa-Fa-Mi-Sol-Fa(held). A rest between each of the
+// repeated Fa hits keeps them from blurring into one continuous tone (same reason
+// SIGNAL_TUNE_MARIO_THEME's repeated E6 above has rests between its own repeats).
+int8_t signal_tune[] = {
+    BUZZER_NOTE_F6, 8,
+    BUZZER_NOTE_REST, 1,
+    BUZZER_NOTE_F6, 8,
+    BUZZER_NOTE_REST, 1,
+    BUZZER_NOTE_F6, 8,
+    BUZZER_NOTE_REST, 1,
+    BUZZER_NOTE_F6, 8,
+    BUZZER_NOTE_REST, 10,
+    BUZZER_NOTE_E6, 8,
+    BUZZER_NOTE_REST, 10,
+    BUZZER_NOTE_G6, 8,
+    BUZZER_NOTE_REST, 10,
+    BUZZER_NOTE_F6, 27,
+    0
+};
+#endif // SIGNAL_TUNE_DQ_LEVELUP
+
+#ifdef SIGNAL_TUNE_R2D2
+// A real R2D2 chirp is a continuous pitch-bent warble, which a fixed-note sequence can't
+// truly reproduce -- this instead jumps between short (1-2 tick, ~15-31ms each) blips at
+// deliberately non-monotonic pitches across the 6th-8th octaves, for the same chaotic
+// "beep-boop-beep" character in miniature (whole thing is under 300ms).
+int8_t signal_tune[] = {
+    BUZZER_NOTE_A7, 4,
+    BUZZER_NOTE_D8, 1,
+    BUZZER_NOTE_F7SHARP_G7FLAT, 4,
+    BUZZER_NOTE_B6, 1,
+    BUZZER_NOTE_G8, 4,
+    BUZZER_NOTE_C7, 1,
+    BUZZER_NOTE_E8, 4,
+    BUZZER_NOTE_A6, 1,
+    BUZZER_NOTE_C8, 4,
+    BUZZER_NOTE_F8, 1,
+    BUZZER_NOTE_D7, 4,
+    BUZZER_NOTE_B7, 1,
+    0
+};
+#endif // SIGNAL_TUNE_R2D2
+
 #ifdef SIGNAL_TUNE_EVANGELION
 int8_t signal_tune[] = {
     BUZZER_NOTE_C5, 13,
