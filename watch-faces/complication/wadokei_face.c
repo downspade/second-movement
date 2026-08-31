@@ -243,10 +243,17 @@ bool wadokei_face_loop(movement_event_t event, void *context) {
             _wadokei_face_update(state);
             break;
         case EVENT_TICK:
+            // The koku/branch shown only ever changes a handful of times a day (each span
+            // is roughly an hour or two), so there's no need to redraw every second --
+            // once a minute is plenty, matching EVENT_LOW_ENERGY_UPDATE's own cadence below.
+            // Movement itself still ticks at a minimum of 1 Hz regardless (there's no lower
+            // frequency to request), so this doesn't change how often we wake up, just how
+            // often we bother rewriting the display once we do.
+            if (movement_get_local_date_time().unit.second != 0) break;
+            _wadokei_face_update(state);
+            break;
         case EVENT_LOW_ENERGY_UPDATE:
-            if (event.event_type == EVENT_LOW_ENERGY_UPDATE && !watch_sleep_animation_is_running()) {
-                watch_start_sleep_animation(1000);
-            }
+            if (!watch_sleep_animation_is_running()) watch_start_sleep_animation(1000);
             _wadokei_face_update(state);
             break;
         case EVENT_LIGHT_BUTTON_DOWN:
