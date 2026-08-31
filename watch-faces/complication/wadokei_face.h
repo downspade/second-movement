@@ -40,6 +40,7 @@
  *   0: traditional bell-count "koku" name (暁九つ/明六つ/朝五つ/昼九つ/暮六つ/夜四つ
  *      etc.), with "半" for the second half of each branch
  *   1: zodiacal branch (十二支) + quarter (一つ〜四つ)
+ * The chosen mode is persisted (wadokei.u32) and restored on the next boot.
  */
 
 #include "movement.h"

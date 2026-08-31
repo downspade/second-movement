@@ -218,6 +218,10 @@ void wadokei_face_setup(uint8_t watch_face_index, void ** context_ptr) {
     if (*context_ptr == NULL) {
         *context_ptr = malloc(sizeof(wadokei_state_t));
         memset(*context_ptr, 0, sizeof(wadokei_state_t));
+        wadokei_state_t *state = (wadokei_state_t *) *context_ptr;
+        // Restore the last-chosen display mode (koku vs branch/quarter); defaults to 0
+        // (already set by the memset above) the first time, before this file exists.
+        filesystem_read_file("wadokei.u32", (char *) &state->mode, sizeof(state->mode));
     }
 }
 
@@ -252,6 +256,7 @@ bool wadokei_face_loop(movement_event_t event, void *context) {
             break;
         case EVENT_ALARM_BUTTON_UP:
             state->mode = !state->mode;
+            filesystem_write_file("wadokei.u32", (char *) &state->mode, sizeof(state->mode));
             _wadokei_face_update(state);
             break;
         default:
@@ -262,6 +267,8 @@ bool wadokei_face_loop(movement_event_t event, void *context) {
 }
 
 void wadokei_face_resign(void *context) {
-    wadokei_state_t *state = (wadokei_state_t *)context;
-    state->mode = 0;
+    // The display mode (koku vs branch/quarter) is intentionally left as-is here -- it's
+    // persisted to wadokei.u32 on every toggle (see EVENT_ALARM_BUTTON_UP), so resetting it
+    // on exit would just fight that and make the choice look like it hadn't stuck.
+    (void) context;
 }
