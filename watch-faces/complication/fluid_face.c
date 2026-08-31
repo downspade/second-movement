@@ -100,15 +100,25 @@
 // handling needed beyond seeding it into the target pattern.
 #define FLUID_COLON_PIXEL 0
 
-// PM (com=3, seg=21) and 24H (com=2, seg=21) indicators, by the same com*23+seg ordering as
-// the colon above. Also just ordinary pixels in the target pattern now -- previously drawn
-// separately via watch_set_indicator() after the fact, which both kept them fixed/unaffected
-// by the shatter and fluid_step() effects (defeating the point of those) and, worse, got
-// silently wiped every tick by the grain loop redrawing every *other* pixel these two
-// addresses are also part of, since a cached "only redraw on change" guard skipped
-// reasserting them once the AM/PM or clock-mode key stopped changing.
+// PM (com=3, seg=21), 24H (com=2, seg=21), SIGNAL/alarm (com=0, seg=21), BELL/time-signal
+// (com=1, seg=21), and ARROWS/low-battery (com=2, seg=0) indicators, by the same com*23+seg
+// ordering as the colon above. All just ordinary pixels in the target pattern now --
+// previously PM/24H were drawn separately via watch_set_indicator() after the fact, which
+// both kept them fixed/unaffected by the shatter and fluid_step() effects (defeating the
+// point of those) and, worse, got silently wiped every tick by the grain loop redrawing
+// every *other* pixel these addresses are also part of. SIGNAL/BELL/ARROWS had the exact
+// same bug (fluid_redraw() draws all 92 pixels from state->filled every tick, and
+// fluid_compute_time_pattern's memset zeroes all of them first) but were never folded into
+// the pattern when PM/24H were fixed, so the alarm, chime, and low-battery icons were
+// silently cleared again on the very next tick after being set -- making it look (and, via
+// EVENT_ALARM_LONG_PRESS's fluid_toggle_time_signal, *feel*) like the chime setting wasn't
+// sticking, even though the underlying state->time_signal_enabled it actually acts on was
+// unaffected the whole time.
 #define FLUID_PM_PIXEL (3 * 23 + 21)
 #define FLUID_24H_PIXEL (2 * 23 + 21)
+#define FLUID_SIGNAL_PIXEL (0 * 23 + 21)
+#define FLUID_BELL_PIXEL (1 * 23 + 21)
+#define FLUID_ARROWS_PIXEL (2 * 23 + 0)
 
 // Segment bits for weekday abbreviation letters ("MON".."SUN", always uppercase A-Z from
 // watch_utility_get_long_weekday()). Custom_LCD_Character_Set (watch_common_display.h) is
@@ -136,7 +146,7 @@ static void fluid_set_char(uint8_t *out, const int8_t *pixels, int num_segs, uin
 // time it is *right now* -- including while reassembling, so the target
 // itself keeps moving forward as real seconds (and occasionally weekday/
 // day) pass.
-static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now) {
+static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now, bool alarm_enabled, bool time_signal_enabled, bool battery_low) {
     uint8_t hour = now.unit.hour;
     bool is_12h = movement_clock_mode_24h() == MOVEMENT_CLOCK_MODE_12H;
     bool is_pm = is_12h && now.unit.hour >= 12;
@@ -173,44 +183,24 @@ static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now) {
     out[FLUID_COLON_PIXEL] = 1;
     out[FLUID_PM_PIXEL] = is_pm ? 1 : 0;
     out[FLUID_24H_PIXEL] = is_12h ? 0 : 1;
+    out[FLUID_SIGNAL_PIXEL] = alarm_enabled ? 1 : 0;
+    out[FLUID_BELL_PIXEL] = time_signal_enabled ? 1 : 0;
+    out[FLUID_ARROWS_PIXEL] = battery_low ? 1 : 0;
 }
 
-static void fluid_indicate_time_signal(fluid_face_state_t *state) {
-    if (state->time_signal_enabled) watch_set_indicator(WATCH_INDICATOR_BELL);
-    else watch_clear_indicator(WATCH_INDICATOR_BELL);
-}
-
-static void fluid_toggle_time_signal(fluid_face_state_t *state) {
-    state->time_signal_enabled = !state->time_signal_enabled;
-    fluid_indicate_time_signal(state);
-}
-
-// Whether alarm_face's alarm is currently set, same as clock_face's SIGNAL
-// indicator. Just reflects the live value -- no local state to track, so
-// this only needs to run when the face becomes active, not every tick.
-static void fluid_indicate_alarm(void) {
-    if (movement_alarm_enabled()) watch_set_indicator(WATCH_INDICATOR_SIGNAL);
-    else watch_clear_indicator(WATCH_INDICATOR_SIGNAL);
-}
-
-static void fluid_indicate_low_battery(fluid_face_state_t *state) {
-    // custom LCD only (see fluid_face.h) -- no classic-LCD LAP fallback needed.
-    if (state->battery_low) watch_set_indicator(WATCH_INDICATOR_ARROWS);
-    else watch_clear_indicator(WATCH_INDICATOR_ARROWS);
-}
-
-// Checks the battery voltage at most once a day, same cadence as clock_face.
+// Checks the battery voltage at most once a day, same cadence as clock_face. Just updates
+// the flag -- FLUID_ARROWS_PIXEL gets it from here via fluid_compute_time_pattern, same as
+// every other bit of the displayed pattern.
 static void fluid_check_battery_periodically(fluid_face_state_t *state, watch_date_time_t now) {
     if (now.unit.day == state->last_battery_check) return;
     state->last_battery_check = now.unit.day;
     state->battery_low = watch_get_vcc_voltage() < FLUID_FACE_LOW_BATTERY_VOLTAGE_THRESHOLD;
-    fluid_indicate_low_battery(state);
 }
 
-// PM and 24H are drawn purely as pixels FLUID_PM_PIXEL/FLUID_24H_PIXEL now (see
-// fluid_compute_time_pattern) -- ordinary members of the same 92-pixel pool this loop
-// already redraws in full every call, so they join the shatter/settle effects like every
-// other segment instead of sitting fixed on top of them via a separate watch_set_indicator().
+// PM, 24H, SIGNAL, BELL, and ARROWS are drawn purely as pixels (see fluid_compute_time_pattern)
+// -- ordinary members of the same 92-pixel pool this loop already redraws in full every call,
+// so they join the shatter/settle effects like every other segment instead of sitting fixed
+// on top of them via a separate watch_set_indicator().
 static void fluid_redraw(fluid_face_state_t *state) {
     for (int i = 0; i < FLUID_NUM_PIXELS; i++) {
         if (state->filled[i]) {
@@ -219,6 +209,15 @@ static void fluid_redraw(fluid_face_state_t *state) {
             watch_clear_pixel(fluid_pixel_com[i], fluid_pixel_seg[i]);
         }
     }
+}
+
+// Toggling only needs to touch the one pixel it affects (not recompute the whole pattern,
+// which would clobber an in-progress shatter/reassembly) for immediate feedback; the next
+// fluid_compute_time_pattern() call reasserts it going forward same as everything else.
+static void fluid_toggle_time_signal(fluid_face_state_t *state) {
+    state->time_signal_enabled = !state->time_signal_enabled;
+    state->filled[FLUID_BELL_PIXEL] = state->time_signal_enabled ? 1 : 0;
+    fluid_redraw(state);
 }
 
 // A neighbor can only accept an incoming grain if it exists and has room.
@@ -272,7 +271,7 @@ static void fluid_step(fluid_face_state_t *state, int dir_index) {
 // fully drain back to it.
 static bool fluid_settle_step(fluid_face_state_t *state) {
     uint8_t target[FLUID_NUM_PIXELS];
-    fluid_compute_time_pattern(target, movement_get_local_date_time());
+    fluid_compute_time_pattern(target, movement_get_local_date_time(), movement_alarm_enabled(), state->time_signal_enabled, state->battery_low);
 
     int budget = SETTLE_STEPS_PER_TICK;
     bool mismatch = false;
@@ -449,10 +448,8 @@ void fluid_face_activate(void *context) {
     state->accel_window_count = 0;
     state->last_dir_index = DIR_S; // one-time initial guess, not a per-tick fallback
     fluid_set_mode(state, FLUID_MODE_CLOCK);
-    fluid_indicate_time_signal(state);
-    fluid_indicate_alarm();
     fluid_check_battery_periodically(state, movement_get_local_date_time());
-    fluid_compute_time_pattern(state->filled, movement_get_local_date_time());
+    fluid_compute_time_pattern(state->filled, movement_get_local_date_time(), movement_alarm_enabled(), state->time_signal_enabled, state->battery_low);
     // First draw happens in response to EVENT_ACTIVATE below, not here --
     // it always follows immediately, so drawing here too would just be the
     // same frame rendered twice.
@@ -501,7 +498,7 @@ bool fluid_face_loop(movement_event_t event, void *context) {
 
             switch (state->mode) {
                 case FLUID_MODE_CLOCK:
-                    fluid_compute_time_pattern(state->filled, movement_get_local_date_time());
+                    fluid_compute_time_pattern(state->filled, movement_get_local_date_time(), movement_alarm_enabled(), state->time_signal_enabled, state->battery_low);
                     break;
                 case FLUID_MODE_FLUID:
                     fluid_step(state, dir_index);
@@ -544,7 +541,7 @@ bool fluid_face_loop(movement_event_t event, void *context) {
             // mid-effect when sleep started.
             state->mode = FLUID_MODE_CLOCK;
             state->manual_recovery = false;
-            fluid_compute_time_pattern(state->filled, movement_get_local_date_time());
+            fluid_compute_time_pattern(state->filled, movement_get_local_date_time(), movement_alarm_enabled(), state->time_signal_enabled, state->battery_low);
             fluid_redraw(state);
             break;
         case EVENT_ALARM_LONG_PRESS:

@@ -14,8 +14,10 @@
  * things go quiet for 5 seconds, the pile reassembles into the current
  * time over a couple of seconds -- seconds (and weekday/day, if a boundary
  * happens to pass) keep advancing throughout, since the target it's
- * reassembling into is recomputed fresh every tick. The PM/24H/BELL
- * indicators are the only things that don't join the effect.
+ * reassembling into is recomputed fresh every tick. Every indicator --
+ * PM/24H, the alarm (SIGNAL) bell, the hourly chime (BELL), and the
+ * low-battery warning (ARROWS) -- is baked into that same pattern, so they
+ * all join the effect just like the digits do.
  *
  * Real hardware calibration is unverified (see the ACCEL_* constants in
  * fluid_face.c) -- expect to retune the trigger/quiet thresholds and the
