@@ -38,9 +38,12 @@
 #include "sunriset.h"
 
 #define LUNAR_DAYS 29.53058770576
-#define LUNAR_SECONDS (LUNAR_DAYS * (24 * 60 * 60))
-#define FIRST_MOON 947182440 // Saturday, 6 January 2000 18:14:00 in unix epoch time
 #define NUM_PHASES 10
+
+// Meeus degrees-to-radians conversion, same literal PI sunriset.c (already linked into this
+// face for twilight/eclipse-visibility math) uses -- not relying on math.h's M_PI, which
+// isn't guaranteed by plain C11.
+#define MOON_DEGRAD (3.1415926535897932384 / 180.0)
 
 // 12 breakpoints for the 11 phase_index windows (0..10) below. Identical to the original
 // 9-window breakpoints except the waxing- and waning-crescent windows ([1, 6.38...] and
@@ -625,13 +628,91 @@ static void _draw_phase_bar(moon_phase_ascii_state_t *state, const char cells[4]
     }
 }
 
+// Meeus, "Astronomical Algorithms" 2nd ed., ch. 49 ("Phases of the Moon"): the Julian
+// Ephemeris Day of the new moon for lunation k (k=0 is 2000-01-06 ~18:15 UTC). The mean term
+// alone (first line) is exactly the old FIRST_MOON-epoch/constant-LUNAR_DAYS calculation this
+// replaces -- accurate only to the extent the moon's orbital speed actually were constant,
+// which it isn't (real synodic months range ~29.18-29.93 days as Earth-Moon distance varies
+// through the elliptical orbit), so that calculation could be off by over half a day at
+// essentially any point in time (verified against a proper ephemeris) purely from this
+// non-uniformity, not from any error accumulating with time since the epoch. The periodic
+// correction terms below (in the Sun's mean anomaly M, the Moon's mean anomaly M', the
+// Moon's argument of latitude F, and the longitude of its ascending node Omega) account for
+// that non-uniformity and bring this to within ~2 minutes of a full ephemeris across
+// 2000-2040 (checked against PyEphem) -- Meeus's own further "planetary argument" terms
+// (his A1..A14), worth at most a few seconds each, are omitted as unnecessary for a display
+// that only ever shows tenths of a day.
+static double _moon_new_moon_jde(double k) {
+    double T = k / 1236.85;
+    double T2 = T * T, T3 = T2 * T, T4 = T3 * T;
+    double jde = 2451550.09766 + LUNAR_DAYS * k + 0.00015437 * T2 - 0.000000150 * T3 + 0.00000000073 * T4;
+
+    double E = 1 - 0.002516 * T - 0.0000074 * T2;
+    double M  = fmod(2.5534   + 29.10535670  * k - 0.0000014 * T2 - 0.00000011 * T3, 360.0) * MOON_DEGRAD;
+    double Mp = fmod(201.5643 + 385.81693528 * k + 0.0107582 * T2 + 0.00001238 * T3 - 0.000000058 * T4, 360.0) * MOON_DEGRAD;
+    double F  = fmod(160.7108 + 390.67050284 * k - 0.0016118 * T2 - 0.00000227 * T3 + 0.000000011 * T4, 360.0) * MOON_DEGRAD;
+    double Om = fmod(124.7746 - 1.56375588   * k + 0.0020672 * T2 + 0.00000215 * T3, 360.0) * MOON_DEGRAD;
+
+    double correction =
+        -0.40720 * sin(Mp)
+        + 0.17241 * E * sin(M)
+        + 0.01608 * sin(2 * Mp)
+        + 0.01039 * sin(2 * F)
+        + 0.00739 * E * sin(Mp - M)
+        - 0.00514 * E * sin(Mp + M)
+        + 0.00208 * E * E * sin(2 * M)
+        - 0.00111 * sin(Mp - 2 * F)
+        - 0.00057 * sin(Mp + 2 * F)
+        + 0.00056 * E * sin(2 * Mp + M)
+        - 0.00042 * sin(3 * Mp)
+        + 0.00042 * E * sin(M + 2 * F)
+        + 0.00038 * E * sin(M - 2 * F)
+        - 0.00024 * E * sin(2 * Mp - M)
+        - 0.00017 * sin(Om)
+        - 0.00007 * sin(Mp + 2 * M)
+        + 0.00004 * sin(2 * Mp - 2 * F)
+        + 0.00004 * sin(3 * M)
+        + 0.00003 * sin(Mp + M - 2 * F)
+        + 0.00003 * sin(2 * Mp + 2 * F)
+        - 0.00003 * sin(Mp + M + 2 * F)
+        + 0.00003 * sin(Mp - M + 2 * F)
+        - 0.00002 * sin(Mp - M - 2 * F)
+        - 0.00002 * sin(3 * Mp + M)
+        + 0.00002 * sin(4 * Mp);
+
+    return jde + correction;
+}
+
+// Age of the moon (days since the preceding new moon) at the given unix time, via the
+// above. k starts as a floor()'d estimate from the mean rate, which the periodic correction
+// can occasionally shift across a lunation boundary -- the two checks below correct that by
+// re-testing the adjacent lunation, so the result is always relative to the true preceding
+// new moon rather than an off-by-one-lunation neighbor.
+static double _moon_age_days(uint32_t now_unix) {
+    double jd = (double) now_unix / 86400.0 + 2440587.5;
+    double k = floor((jd - 2451550.09766) / LUNAR_DAYS);
+    double jde = _moon_new_moon_jde(k);
+    if (jde > jd) {
+        k -= 1.0;
+        jde = _moon_new_moon_jde(k);
+    } else {
+        double jde_next = _moon_new_moon_jde(k + 1.0);
+        if (jde_next <= jd) jde = jde_next;
+    }
+    return jd - jde;
+}
+
 static void _update(moon_phase_ascii_state_t *state) {
     char buf[6];
     bool southern = state->southern_hemisphere;
-    watch_date_time_t date_time = watch_rtc_get_date_time();
-    uint32_t now = watch_utility_date_time_to_unix_time(date_time, movement_get_current_timezone_offset()) + state->offset;
-    date_time = watch_utility_date_time_from_unix_time(now, movement_get_current_timezone_offset());
-    double currentday = fmod(now - FIRST_MOON, LUNAR_SECONDS) / LUNAR_SECONDS * LUNAR_DAYS;
+    // watch_rtc_get_date_time()/watch_rtc_get_unix_time() are already UTC (see
+    // movement_get_utc_date_time(), which returns the former verbatim) -- converting through
+    // watch_utility_date_time_to_unix_time() with a nonzero utc_offset would subtract the
+    // timezone offset a second time (it already isn't present to begin with), silently
+    // shifting `now` away from true UTC by that same amount every time this runs.
+    uint32_t now = watch_rtc_get_unix_time() + state->offset;
+    watch_date_time_t date_time = watch_utility_date_time_from_unix_time(now, movement_get_current_timezone_offset());
+    double currentday = _moon_age_days(now);
     uint8_t phase_index = 0;
 
     for(phase_index = 0; phase_index <= NUM_PHASES; phase_index++) {
