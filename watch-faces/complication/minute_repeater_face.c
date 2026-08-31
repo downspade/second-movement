@@ -74,7 +74,7 @@ static void minute_repeater_chime_time(watch_date_time_t date_time) {
     int i = 0;
 
     if (hours > 0) {
-        sound_seq[i++] = BUZZER_NOTE_C6;
+        sound_seq[i++] = BUZZER_NOTE_C7;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(500);
@@ -88,11 +88,11 @@ static void minute_repeater_chime_time(watch_date_time_t date_time) {
         // a beat of silence to set the quarter chimes apart from the hour chimes.
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(200);
-        sound_seq[i++] = BUZZER_NOTE_E6;
+        sound_seq[i++] = BUZZER_NOTE_E7;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(150);
-        sound_seq[i++] = BUZZER_NOTE_C6;
+        sound_seq[i++] = BUZZER_NOTE_C7;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(750);
@@ -106,7 +106,7 @@ static void minute_repeater_chime_time(watch_date_time_t date_time) {
         // a beat of silence to set the minute chimes apart from the quarter chimes.
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(200);
-        sound_seq[i++] = BUZZER_NOTE_E6;
+        sound_seq[i++] = BUZZER_NOTE_E7;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(500);
