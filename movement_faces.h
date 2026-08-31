@@ -90,4 +90,5 @@
 #include "wadokei_face.h"
 #include "kyureki_face.h"
 #include "set_location_face.h"
+#include "set_timelocation_face.h"
 // New includes go above this line.

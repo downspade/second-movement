@@ -31,6 +31,7 @@ SRCS += \
   ./watch-faces/sensor/voltage_face.c \
   ./watch-faces/settings/set_time_face.c \
   ./watch-faces/settings/set_location_face.c \
+  ./watch-faces/settings/set_timelocation_face.c \
   ./watch-faces/settings/settings_face.c \
   ./watch-faces/settings/finetune_face.c \
   ./watch-faces/settings/nanosec_face.c \
