@@ -28,10 +28,9 @@
 #include "movement_faces.h"
 
 const watch_face_t watch_faces[] = {
-    clock_face,
+    minute_repeater_face,
     fluid_face,
     world_clock_face,
-    minute_repeater_face,
     fast_stopwatch_face,
     countdown_face,
     moon_phase_ascii_face,
