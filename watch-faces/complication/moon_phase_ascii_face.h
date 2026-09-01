@@ -49,20 +49,18 @@
  *
  * Seconds position: the day of the month.
  *
- * The sleep indicator (the same crescent-moon icon shown in low energy mode) lights up
- * whenever the Moon is actually above the horizon right now at the saved location (see
- * set_location_face) -- e.g. it's on for a first-quarter moon in the afternoon/evening, off
- * for a waning-crescent moon in the afternoon. This is a rough estimate (today's sunrise/set
- * shifted by the Moon's current elongation from the Sun -- see _moon_visible_now in the .c
- * file), not a full moon-position calculation, and stays off if no location has been saved.
- * It tracks whatever day is being displayed, so it also updates as you step through days with
- * Alarm/Light below. On an eclipse day this is overridden by the eclipse-visibility check
- * described further down instead. Since this indicator is spoken for, low energy (sleep) mode
- * does NOT show it in the usual way (a steady "asleep" glow) -- instead, while asleep, the PM
- * indicator lights up as a "P.M." pun for "Present Moon" (this face never shows a 12-hour
- * time, so that indicator is otherwise unused here), meaning the crescent above is a live
- * reading rather than a stale one from before the watch fell asleep -- it keeps updating every
- * hour, same as while awake (see the EVENT_LOW_ENERGY_UPDATE handler in the .c file).
+ * The PM indicator (repurposed here -- this face never shows a 12-hour time, so it's free;
+ * "P.M." as in "Present Moon") lights up whenever the Moon is actually above the horizon
+ * right now at the saved location (see set_location_face) -- e.g. it's on for a first-quarter
+ * moon in the afternoon/evening, off for a waning-crescent moon in the afternoon. This is a
+ * rough estimate (today's sunrise/set shifted by the Moon's current elongation from the Sun --
+ * see _moon_visible_now in the .c file), not a full moon-position calculation, and stays off
+ * if no location has been saved. It tracks whatever day is being displayed, so it also updates
+ * as you step through days with Alarm/Light below. On an eclipse day this is overridden by the
+ * eclipse-visibility check described further down instead. It keeps updating every hour even
+ * while the watch is asleep (see the EVENT_LOW_ENERGY_UPDATE handler in the .c file), same as
+ * while awake -- meanwhile the sleep indicator itself is left to mean what it usually does
+ * (lit steadily while the watch is in low energy mode).
  *
  * Press the Alarm button repeatedly to move forward in time and watch the
  * moon phase advance; press Light to move back. Holding Light illuminates
@@ -77,9 +75,8 @@
  *  - Top-right: the last 2 digits of the year.
  *  - Hours/minutes/seconds: month, day, and hour, all local to the wearer
  *    (the table stores UTC).
- *  - The sleep indicator (the same crescent-moon icon shown in low energy
- *    mode) lights up if the eclipse happens at night at the saved location
- *    -- i.e. it's actually visible there.
+ *  - The PM ("Present Moon") indicator lights up if the eclipse happens at
+ *    night at the saved location -- i.e. it's actually visible there.
  *
  * Alarm/Light single-press step to the next/previous eclipse; long-pressing
  * Alarm again returns to today's date and the ordinary moon phase display.

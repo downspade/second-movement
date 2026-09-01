@@ -558,7 +558,7 @@ static bool _eclipse_visible_at_night(watch_date_time_t local, bool location_set
 }
 
 // Returns whether the Moon is above the horizon at `local` right now, at the saved location --
-// used to light the sleep indicator on an ordinary (non-eclipse) day. There's no moonrise/set
+// used to light the PM indicator on an ordinary (non-eclipse) day. There's no moonrise/set
 // routine in this codebase (sunriset.c, already linked in for the eclipse check above, only
 // handles the Sun), and a full one is out of scope for what only needs a rough yes/no here --
 // instead this reuses today's *solar* rise/set times and shifts them by the Moon's current
@@ -831,20 +831,21 @@ static void _update(moon_phase_ascii_state_t *state) {
     if (colon_only) watch_start_indicator_blink_if_possible(WATCH_INDICATOR_COLON, 250);
     else watch_clear_colon();
 
-    // The sleep indicator (the same crescent-moon icon shown in low energy mode -- but not used
-    // for that purpose on this face, see the EVENT_LOW_ENERGY_UPDATE handler below) lights up
-    // if the Moon is actually up right now at the saved location: on an eclipse day, "up" means
-    // the eclipse itself falls at night there (same check calendar mode's indicator uses, so
-    // it stays lit/cleared correctly across mode transitions without extra bookkeeping there --
-    // see the LOW_ENERGY_UPDATE and ALARM_LONG_PRESS handlers below); on an ordinary day it's
-    // the general moonrise/set estimate instead, which also respects state->offset since both
-    // date_time and currentday above already do. This runs (and so stays accurate) even while
-    // asleep, since EVENT_LOW_ENERGY_UPDATE keeps calling _update() at the top of each hour.
+    // The PM indicator (repurposed here -- this face never shows a 12-hour time, so it's free;
+    // "P.M." as in "Present Moon") lights up if the Moon is actually up right now at the saved
+    // location: on an eclipse day, "up" means the eclipse itself falls at night there (same
+    // check calendar mode's indicator uses, so it stays lit/cleared correctly across mode
+    // transitions without extra bookkeeping there -- see the LOW_ENERGY_UPDATE and ALARM_LONG_
+    // PRESS handlers below); on an ordinary day it's the general moonrise/set estimate instead,
+    // which also respects state->offset since both date_time and currentday above already do.
+    // This runs (and so stays accurate) even while asleep, since EVENT_LOW_ENERGY_UPDATE keeps
+    // calling _update() at the top of each hour -- the sleep indicator itself is left alone
+    // here, free to mean what it usually does (see the EVENT_LOW_ENERGY_UPDATE handler below).
     bool visible = eclipse_index >= 0
         ? _eclipse_visible_at_night(eclipse_local, state->location_set)
         : _moon_visible_now(date_time, currentday, state->location_set);
-    if (visible) watch_set_indicator(WATCH_INDICATOR_SLEEP);
-    else watch_clear_indicator(WATCH_INDICATOR_SLEEP);
+    if (visible) watch_set_indicator(WATCH_INDICATOR_PM);
+    else watch_clear_indicator(WATCH_INDICATOR_PM);
 
     // Seconds: day of the month.
     sprintf(buf, "%2d", date_time.unit.day);
@@ -856,11 +857,11 @@ static void _update(moon_phase_ascii_state_t *state) {
 // run over 100%, using all 3 of TOP_LEFT's slots for those -- see the comment at that
 // sprintf); top-right the last 2 digits of the year; the
 // hours/minutes/seconds positions the month, day, and hour, all local to the wearer (the
-// table stores UTC). The sleep indicator (the same crescent-moon icon shown in low energy
-// mode) lights up if the eclipse's local moment falls at night at the saved location -- since
-// eclipses only happen at full moon, and a full moon rises near sunset and sets near sunrise,
-// "is it night" is essentially "is the moon up", without needing a separate moon-position
-// calculation.
+// table stores UTC). The PM indicator (repurposed as "Present Moon", see _update()'s own
+// indicator block for why) lights up if the eclipse's local moment falls at night at the saved
+// location -- since eclipses only happen at full moon, and a full moon rises near sunset and
+// sets near sunrise, "is it night" is essentially "is the moon up", without needing a separate
+// moon-position calculation.
 static void _update_calendar(moon_phase_ascii_state_t *state) {
     const lunar_eclipse_t *e = &lunar_eclipses[state->calendar_index];
     char buf[6];
@@ -918,8 +919,8 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
     // Visibility isn't meaningfully computable without a real local year either (sun_rise_set
     // would get the same wrong year local.unit.year would carry) -- treat those entries as
     // not visible rather than guess, same as the polar day/night case inside the helper.
-    if (locally_convertible && _eclipse_visible_at_night(local, state->location_set)) watch_set_indicator(WATCH_INDICATOR_SLEEP);
-    else watch_clear_indicator(WATCH_INDICATOR_SLEEP);
+    if (locally_convertible && _eclipse_visible_at_night(local, state->location_set)) watch_set_indicator(WATCH_INDICATOR_PM);
+    else watch_clear_indicator(WATCH_INDICATOR_PM);
 }
 
 bool moon_phase_ascii_face_loop(movement_event_t event, void *context) {
@@ -928,10 +929,7 @@ bool moon_phase_ascii_face_loop(movement_event_t event, void *context) {
 
     switch (event.event_type) {
         case EVENT_ACTIVATE:
-            // Undoes the low energy mode marker EVENT_LOW_ENERGY_UPDATE sets below -- unlike
-            // that handler's other display writes, an indicator segment doesn't get naturally
-            // overwritten just by _update() running again, so it needs this explicit clear.
-            watch_clear_indicator(WATCH_INDICATOR_PM);
+            if (watch_sleep_animation_is_running()) watch_stop_sleep_animation();
             state->location_set = _read_location(state);
             if (state->calendar_mode) _update_calendar(state);
             else _update(state);
@@ -963,8 +961,8 @@ bool moon_phase_ascii_face_loop(movement_event_t event, void *context) {
             }
             // update at the top of the hour, or if we're entering sleep mode with an offset,
             // or if we just left calendar mode -- that last one matters even with no other
-            // reason to update, since _update() is what sets/clears the sleep indicator for
-            // today's actual eclipse visibility; without it, the indicator would be left
+            // reason to update, since _update() is what sets/clears the PM indicator for
+            // today's actual Moon/eclipse visibility; without it, the indicator would be left
             // however calendar mode last drew it instead. Also, in sleep mode, always show
             // the current moon phase (offset = 0).
             if (left_calendar_mode || state->offset || (watch_rtc_get_date_time().unit.minute == 0)) {
@@ -973,16 +971,10 @@ bool moon_phase_ascii_face_loop(movement_event_t event, void *context) {
             }
             // and kill the offset so when the wearer wakes up, it matches what's on screen.
             state->offset = 0;
-            // watch_start_sleep_animation() would just show WATCH_INDICATOR_SLEEP steadily on
-            // this LCD type (see its WATCH_LCD_TYPE_CUSTOM branch) -- but that indicator is
-            // already spoken for here: it tracks whether the real Moon is up (see _update()'s
-            // indicator block above), and _update() keeps refreshing it at the top of each hour
-            // even while asleep, so it stays accurate rather than just meaning "asleep" here.
-            // Mark low energy mode with the otherwise-unused PM indicator instead -- this face
-            // never shows a 12-hour time, so it's free, and repurposed here as a "P.M." pun for
-            // "Present Moon" (i.e. the WATCH_INDICATOR_SLEEP crescent above is a live reading,
-            // not a stale one from before the watch fell asleep). Cleared again on EVENT_ACTIVATE.
-            watch_set_indicator(WATCH_INDICATOR_PM);
+            // The sleep indicator is unclaimed here (the Moon-visibility indicator above lives
+            // on WATCH_INDICATOR_PM instead, see _update()'s indicator block), so this can just
+            // use it for its usual meaning.
+            if (!watch_sleep_animation_is_running()) watch_start_sleep_animation(1000);
             break;
         }
         case EVENT_ALARM_BUTTON_UP:
@@ -999,9 +991,9 @@ bool moon_phase_ascii_face_loop(movement_event_t event, void *context) {
             break;
         case EVENT_ALARM_LONG_PRESS:
             if (state->calendar_mode) {
-                // back to today's moon phase -- _update() below sets/clears the sleep
-                // indicator itself based on today's actual eclipse visibility, so no need
-                // to clear it separately here first.
+                // back to today's moon phase -- _update() below sets/clears the PM
+                // indicator itself based on today's actual Moon/eclipse visibility, so no
+                // need to clear it separately here first.
                 state->calendar_mode = false;
                 watch_clear_decimal_if_available();
                 state->offset = 0;
@@ -1044,7 +1036,7 @@ void moon_phase_ascii_face_resign(void *context) {
     movement_request_tick_frequency(1); // in case an eclipse bar blink had bumped this to 2
     if (state->calendar_mode) {
         state->calendar_mode = false;
-        watch_clear_indicator(WATCH_INDICATOR_SLEEP);
+        watch_clear_indicator(WATCH_INDICATOR_PM);
         watch_clear_decimal_if_available();
     }
 }
