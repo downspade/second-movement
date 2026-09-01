@@ -75,7 +75,7 @@ static void minute_repeater_chime_time(watch_date_time_t date_time) {
     int i = 0;
 
     if (hours > 0) {
-        sound_seq[i++] = BUZZER_NOTE_C7;
+        sound_seq[i++] = BUZZER_NOTE_C8;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(500);
@@ -89,11 +89,11 @@ static void minute_repeater_chime_time(watch_date_time_t date_time) {
         // a beat of silence to set the quarter chimes apart from the hour chimes.
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(200);
-        sound_seq[i++] = BUZZER_NOTE_E7;
+        sound_seq[i++] = BUZZER_NOTE_E8;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(150);
-        sound_seq[i++] = BUZZER_NOTE_C7;
+        sound_seq[i++] = BUZZER_NOTE_C8;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(750);
@@ -107,7 +107,7 @@ static void minute_repeater_chime_time(watch_date_time_t date_time) {
         // a beat of silence to set the minute chimes apart from the quarter chimes.
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(200);
-        sound_seq[i++] = BUZZER_NOTE_E7;
+        sound_seq[i++] = BUZZER_NOTE_E8;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(75);
         sound_seq[i++] = BUZZER_NOTE_REST;
         sound_seq[i++] = MINUTE_REPEATER_TICKS(500);
@@ -117,7 +117,11 @@ static void minute_repeater_chime_time(watch_date_time_t date_time) {
         }
     }
 
-    watch_buzzer_play_sequence(sound_seq, NULL);
+    // watch_buzzer_play_sequence() would hardcode this to WATCH_BUZZER_VOLUME_LOUD regardless
+    // of the wearer's actual volume preference -- use the same signal_volume setting the hourly
+    // chime (movement_play_signal(), via EVENT_BACKGROUND_TASK below) already respects, so both
+    // sounds this face makes agree.
+    watch_buzzer_play_sequence_with_volume(sound_seq, NULL, movement_signal_volume());
 }
 
 static void minute_repeater_indicate(watch_indicator_t indicator, bool on) {
