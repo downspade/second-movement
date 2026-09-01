@@ -53,16 +53,17 @@
 
 // Chimes out the current time, Howdy neighbors: like an actual (very
 // expensive) watch with a minute repeater complication, it's boring at
-// 00:00 or 1:00 and very musical at 23:59 or 12:59.
+// 12:00/00:00 or 1:00 and very musical at 11:59 or 23:59.
 static void minute_repeater_chime_time(watch_date_time_t date_time) {
     int hours = date_time.unit.hour;
     int quarters = date_time.unit.minute / 15;
     int minutes = date_time.unit.minute % 15;
 
-    if (movement_clock_mode_24h() == MOVEMENT_CLOCK_MODE_12H) {
-        hours %= 12;
-        if (hours == 0) hours = 12;
-    }
+    // A real minute repeater's hour gong always counts on a 12-hour dial, no matter what the
+    // display shows -- so this stays unconditional (not just when movement_clock_mode_24h() is
+    // 12h) to keep 24h mode from chiming out the raw 24-hour count (e.g. 23 chimes at 23:59).
+    hours %= 12;
+    if (hours == 0) hours = 12;
 
     // static: the buzzer plays this back asynchronously over the next several
     // seconds, well after this function returns, so it can't live on the stack.

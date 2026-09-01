@@ -48,7 +48,8 @@
  * How to use it:
  *
  * Long press the LIGHT button to get an audible reading of the time:
- * 0..23 (1..12 if 24-hour format isn't enabled) low beep(s) for the hours
+ * 1..12 low beep(s) for the hours (always a 12-hour count, regardless of
+ * whether the display itself is in 12- or 24-hour format)
  * 0..3 low-high paired beeps for the quarters
  * 0..14 high pitched beep(s) for the remaining minutes
  *
