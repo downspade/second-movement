@@ -803,9 +803,9 @@ static void _update(moon_phase_ascii_state_t *state) {
     // but it's harmless to always check (the table just won't match on any other day). Unlike
     // a solar eclipse, a lunar eclipse is a location-independent fact (the Moon passes through
     // Earth's shadow at the same moment for every observer), so this doesn't need location_set
-    // -- only the calendar mode's "visible at night from here" indicator does.
-    watch_date_time_t eclipse_local = {0};
-    int eclipse_index = _find_eclipse(date_time, &eclipse_local);
+    // -- only the calendar mode's "visible at night from here" indicator does. The eclipse's
+    // own local time isn't needed here (see the PM indicator block below), so NULL skips it.
+    int eclipse_index = _find_eclipse(date_time, NULL);
     bool penumbral = eclipse_index >= 0 && lunar_eclipses[eclipse_index].penumbral;
     uint8_t magnitude_pct = eclipse_index >= 0 ? lunar_eclipses[eclipse_index].magnitude_pct : 0;
     // A penumbral eclipse has no umbral magnitude to size a bar shape by, and a magnitude of
@@ -833,17 +833,19 @@ static void _update(moon_phase_ascii_state_t *state) {
 
     // The PM indicator (repurposed here -- this face never shows a 12-hour time, so it's free;
     // "P.M." as in "Present Moon") lights up if the Moon is actually up right now at the saved
-    // location: on an eclipse day, "up" means the eclipse itself falls at night there (same
-    // check calendar mode's indicator uses, so it stays lit/cleared correctly across mode
-    // transitions without extra bookkeeping there -- see the LOW_ENERGY_UPDATE and ALARM_LONG_
-    // PRESS handlers below); on an ordinary day it's the general moonrise/set estimate instead,
-    // which also respects state->offset since both date_time and currentday above already do.
+    // location, which also respects state->offset since both date_time and currentday above
+    // already do. This is _moon_visible_now() even on an eclipse day -- deliberately NOT
+    // _eclipse_visible_at_night(eclipse_local, ...), which reflects only the eclipse's own
+    // fixed instant rather than the current time, and eclipses only happen at full moon, so
+    // the Moon is genuinely up for large stretches of an eclipse day regardless of whether
+    // that one instant fell at night; a "now" check that only agreed with reality once a day
+    // would make this indicator look broken on exactly the day it matters most. (Calendar
+    // mode's own indicator, in _update_calendar() below, is a different question -- "was this
+    // particular eclipse visible" -- so it still uses _eclipse_visible_at_night() correctly.)
     // This runs (and so stays accurate) even while asleep, since EVENT_LOW_ENERGY_UPDATE keeps
     // calling _update() at the top of each hour -- the sleep indicator itself is left alone
     // here, free to mean what it usually does (see the EVENT_LOW_ENERGY_UPDATE handler below).
-    bool visible = eclipse_index >= 0
-        ? _eclipse_visible_at_night(eclipse_local, state->location_set)
-        : _moon_visible_now(date_time, currentday, state->location_set);
+    bool visible = _moon_visible_now(date_time, currentday, state->location_set);
     if (visible) watch_set_indicator(WATCH_INDICATOR_PM);
     else watch_clear_indicator(WATCH_INDICATOR_PM);
 

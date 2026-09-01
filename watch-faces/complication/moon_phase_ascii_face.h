@@ -56,11 +56,12 @@
  * rough estimate (today's sunrise/set shifted by the Moon's current elongation from the Sun --
  * see _moon_visible_now in the .c file), not a full moon-position calculation, and stays off
  * if no location has been saved. It tracks whatever day is being displayed, so it also updates
- * as you step through days with Alarm/Light below. On an eclipse day this is overridden by the
- * eclipse-visibility check described further down instead. It keeps updating every hour even
- * while the watch is asleep (see the EVENT_LOW_ENERGY_UPDATE handler in the .c file), same as
- * while awake -- meanwhile the sleep indicator itself is left to mean what it usually does
- * (lit steadily while the watch is in low energy mode).
+ * as you step through days with Alarm/Light below -- including on an eclipse day, where it
+ * still just means "is the Moon up now" rather than "was this eclipse visible" (that's a
+ * separate question, answered by the eclipse calendar's own indicator further down instead).
+ * It keeps updating every hour even while the watch is asleep (see the EVENT_LOW_ENERGY_UPDATE
+ * handler in the .c file), same as while awake -- meanwhile the sleep indicator itself is left
+ * to mean what it usually does (lit steadily while the watch is in low energy mode).
  *
  * Press the Alarm button repeatedly to move forward in time and watch the
  * moon phase advance; press Light to move back. Holding Light illuminates
