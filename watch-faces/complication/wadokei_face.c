@@ -53,7 +53,7 @@ static const char *branch_names[12] = {
 // One quarter name per position, spelled out in full (一つ/二つ/三つ/四つ), 6 characters
 // each for WATCH_POSITION_BOTTOM.
 static const char *quarter_names[4] = {
-    "HiTOTU", "FUTATU", "MiTTSU", "YOTTSU",
+    "Hitotu", "Futatu", "Mittu ", "Yottu ",
 };
 
 // Traditional bell-count ("koku") names, per koku.csv: each branch has a bell-count digit
