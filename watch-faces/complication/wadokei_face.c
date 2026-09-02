@@ -208,7 +208,7 @@ static void _wadokei_face_update(wadokei_state_t *state) {
     uint8_t digit = koku_digit[branch_index];
     bool half = quarter_index >= 2;
     char buf[7];
-    snprintf(buf, sizeof(buf), half ? "%dTUHAN" : "%dTU   ", digit);
+    snprintf(buf, sizeof(buf), half ? "%dtuHan" : "%dtu   ", digit);
     watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)prefix, (char *)prefix);
     watch_display_text(WATCH_POSITION_BOTTOM, buf);
 }
