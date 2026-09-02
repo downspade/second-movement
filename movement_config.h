@@ -36,6 +36,8 @@ const watch_face_t watch_faces[] = {
     moon_phase_ascii_face,
     wadokei_face,
     kyureki_face,
+    counter_term_face,
+    counter_face,
     temperature_display_face,
     alarm_face,
     voltage_face,

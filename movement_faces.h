@@ -35,6 +35,7 @@
 #include "sunrise_sunset_face.h"
 #include "moon_phase_ascii_face.h"
 #include "days_since_face.h"
+#include "counter_term_face.h"
 #include "character_set_face.h"
 #include "accelerometer_status_face.h"
 #include "all_segments_face.h"
