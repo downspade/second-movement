@@ -481,21 +481,26 @@ static const lunar_eclipse_t lunar_eclipses[] = {
 };
 #define NUM_LUNAR_ECLIPSES (sizeof(lunar_eclipses) / sizeof(lunar_eclipse_t))
 
-// Returns the table index of the eclipse on this local calendar date, or -1 if there isn't
-// one. Table entries are UTC (see lunar_eclipse_t), so each is converted to local time (the
-// same way _update_calendar does) before comparing -- an eclipse's UTC and local calendar
-// days can differ, e.g. for an eclipse near 00:00 UTC, or a timezone far from UTC. When a
-// match is found and out_local isn't NULL, also writes out that entry's local time (hour/
-// minute included), so the caller can check visibility without redoing this conversion.
-static int _find_eclipse(watch_date_time_t local_date_time, watch_date_time_t *out_local) {
-    int32_t offset = movement_get_current_timezone_offset();
+// The eclipse bar blink window: starts this many seconds before the table's recorded moment of
+// greatest eclipse (approximating the eclipse's actual start, since the table has no
+// first-contact time -- see lunar_eclipse_t's comment) and ends this many seconds after it
+// (approximating its end). 22h/2h rather than a symmetric split: greatest eclipse tends to fall
+// nearer the end of the visible event than its middle, so the requested "starts 24h before the
+// eclipse begins, blinks until it ends" is closer to [-22h, +2h] around the tabulated moment
+// than to [-24h, 0].
+#define ECLIPSE_BLINK_BEFORE_SECONDS (22 * 3600)
+#define ECLIPSE_BLINK_AFTER_SECONDS (2 * 3600)
+
+// Returns the table index of the eclipse whose blink window (see above) contains `now_unix`
+// (absolute UTC unix time, e.g. _update's `now`), or -1 if none does.
+static int _find_eclipse_window(uint32_t now_unix) {
     for (size_t i = 0; i < NUM_LUNAR_ECLIPSES; i++) {
         // watch_date_time_t's year field is only 6 bits (0-63, i.e. 2020-2083 -- see
         // rtc_date_time_t in rtc32.h), but this table runs to year 150 (2170). An entry past
         // 63 would silently truncate into that range below (e.g. year 70 becomes 70 & 0x3F =
-        // 6, aliasing 2090 as 2026) and could spuriously match some unrelated real date. The
+        // 6, aliasing 2090 as 2026) and could spuriously match some unrelated real time. The
         // device's own clock can't represent a year past 2083 in the first place, so such an
-        // entry can never actually be "today" here -- skip it rather than risk that collision.
+        // entry can never actually be "now" here -- skip it rather than risk that collision.
         if (lunar_eclipses[i].year > 63) continue;
         watch_date_time_t utc = {0};
         utc.unit.year = lunar_eclipses[i].year;
@@ -503,12 +508,9 @@ static int _find_eclipse(watch_date_time_t local_date_time, watch_date_time_t *o
         utc.unit.day = lunar_eclipses[i].day;
         utc.unit.hour = lunar_eclipses[i].hour;
         utc.unit.minute = lunar_eclipses[i].minute;
-        watch_date_time_t local = watch_utility_date_time_from_unix_time(
-            watch_utility_date_time_to_unix_time(utc, 0), offset);
-        if (local.unit.year == local_date_time.unit.year &&
-            local.unit.month == local_date_time.unit.month &&
-            local.unit.day == local_date_time.unit.day) {
-            if (out_local) *out_local = local;
+        uint32_t moment = watch_utility_date_time_to_unix_time(utc, 0);
+        if (now_unix + ECLIPSE_BLINK_BEFORE_SECONDS >= moment &&
+            now_unix <= moment + ECLIPSE_BLINK_AFTER_SECONDS) {
             return (int) i;
         }
     }
@@ -540,7 +542,7 @@ static bool _read_lat_lon(double *lat, double *lon) {
 }
 
 // Returns whether an eclipse at `local` (already converted to local time, e.g. by
-// _find_eclipse's out_local) falls at night at the saved location -- i.e. is actually visible
+// _update_calendar) falls at night at the saved location -- i.e. is actually visible
 // there. Eclipses only happen at full moon, and a full moon rises near sunset and sets near
 // sunrise, so "is it night" is essentially "is the moon up", without needing a separate
 // moon-position calculation. Returns false if no location is set, or if the sun doesn't
@@ -800,12 +802,13 @@ static void _update(moon_phase_ascii_state_t *state) {
         }
     }
     // Eclipses only happen at full moon, so this only ever matters when phase_index == 4 --
-    // but it's harmless to always check (the table just won't match on any other day). Unlike
-    // a solar eclipse, a lunar eclipse is a location-independent fact (the Moon passes through
-    // Earth's shadow at the same moment for every observer), so this doesn't need location_set
-    // -- only the calendar mode's "visible at night from here" indicator does. The eclipse's
-    // own local time isn't needed here (see the PM indicator block below), so NULL skips it.
-    int eclipse_index = _find_eclipse(date_time, NULL);
+    // but it's harmless to always check (the table just won't match outside the blink window
+    // below). Unlike a solar eclipse, a lunar eclipse is a location-independent fact (the Moon
+    // passes through Earth's shadow at the same moment for every observer), so this doesn't
+    // need location_set -- only the calendar mode's "visible at night from here" indicator does.
+    // `now` is already absolute UTC unix time (see its own comment above), matching what
+    // _find_eclipse_window compares against, so no timezone conversion is needed here either.
+    int eclipse_index = _find_eclipse_window(now);
     bool penumbral = eclipse_index >= 0 && lunar_eclipses[eclipse_index].penumbral;
     uint8_t magnitude_pct = eclipse_index >= 0 ? lunar_eclipses[eclipse_index].magnitude_pct : 0;
     // A penumbral eclipse has no umbral magnitude to size a bar shape by, and a magnitude of
@@ -814,13 +817,13 @@ static void _update(moon_phase_ascii_state_t *state) {
     // showing the ordinary (always-full, since eclipses only happen at full moon) moon steadily.
     bool colon_only = eclipse_index >= 0 && (penumbral || magnitude_pct == 0);
     state->eclipse_bar_magnitude = (eclipse_index >= 0 && !colon_only) ? magnitude_pct : 0;
-    state->blink_on = true; // always start a fresh eclipse day (or a fresh non-eclipse day) fully lit
+    state->blink_on = true; // always start a fresh blink window (or a fresh non-eclipse hour) fully lit
 
     // The bar blink is driven by EVENT_TICK, one toggle per tick -- bump to 2 ticks/second so
     // each shape shows for 0.5s (a 1s full cycle) instead of the default 1Hz's 1s/2s. Only
     // while actually blinking something, since a faster tick costs more power; _update()
     // re-evaluates this every hour (or on offset/activate), so it drops back to 1 on its own
-    // once the eclipse day has passed.
+    // once the blink window has passed.
     movement_request_tick_frequency(state->eclipse_bar_magnitude > 0 ? 2 : 1);
 
     _draw_phase_bar(state, cells);
@@ -870,7 +873,7 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
 
     // watch_date_time_t's year field is only 6 bits (2020-2083 -- see rtc_date_time_t in
     // rtc32.h), but this table runs to year 150 (2170); an entry past 63 can't be converted to
-    // local time through it at all (same limitation as _find_eclipse, see its comment). Rather
+    // local time through it at all (same limitation as _find_eclipse_window, see its comment). Rather
     // than let that silently alias into some unrelated, wrong year, fall back to the entry's
     // raw UTC date/time for those -- up to a day off from the wearer's actual local calendar
     // day, but never a wrong year.
