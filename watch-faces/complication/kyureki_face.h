@@ -33,24 +33,32 @@
  * a precomputed table (see kyureki_table_data.h) covering KYUREKI_TABLE_BASE_YEAR
  * through KYUREKI_TABLE_BASE_YEAR + KYUREKI_TABLE_NUM_YEARS - 1.
  *
- * No location needed; this face just reads the current local date. No buttons: both
- * lines are shown together, always.
+ * No location needed; this face just reads the current local date.
  *
  * TOP (5 chars, custom LCD): 六曜 (rokuyo, the traditional 6-day lucky/unlucky cycle),
  * derived from the lunar month and day (index = (month + day - 2) % 6; leap months use the
  * same index as their preceding month, per convention).
- * BOTTOM (6 chars): lunar month.day (e.g. " 8.28"), decimal point lit between them; the
- * last 2 characters show "Ud" when the current month is a leap month, else blank.
+ * BOTTOM (6 chars): lunar month.day, both right-aligned with no leading zero (e.g. " 8. 5",
+ * "12.28"), decimal point lit between them; the last 2 characters show "Ud" when the current
+ * month is a leap month, else blank (or, on custom while browsing a non-today date, the
+ * solar day-of-month instead -- see kyureki_face.c's own comment on that).
+ *
+ * Press Alarm to step forward one day at a time (browsing tomorrow's, the day after's, etc.
+ * rokuyo and lunar date), Light to step back a day; long-press Alarm to jump back to today,
+ * long-press Light to illuminate the display (a plain tap of Light doesn't -- it's claimed by
+ * the day-back step instead). The offset isn't persisted -- leaving the face (or falling
+ * asleep) resets it back to today, same as moon_phase_ascii's own day-offset browsing.
  */
 
 #include "movement.h"
 
 typedef struct {
-    watch_date_time_t last_computed_date; // only recompute when the local date changes
+    watch_date_time_t last_computed_date; // only recompute when the (offset) local date changes
     uint8_t month_number;
     bool is_leap;
     uint8_t day_of_month;
     bool valid; // false if the current date falls outside the table's covered range
+    int32_t offset_days; // Alarm-button browsing offset from today; reset on resign/sleep
 } kyureki_state_t;
 
 void kyureki_face_setup(uint8_t watch_face_index, void ** context_ptr);

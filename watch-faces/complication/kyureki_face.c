@@ -124,8 +124,21 @@ static void _kyureki_compute(kyureki_state_t *state, watch_date_time_t date) {
     state->valid = true;
 }
 
+// Shifts a date by delta_days via a unix-time round trip (handles month/year rollover for
+// free), zeroing time-of-day first so the round trip can't land on the wrong calendar day
+// from a DST-like offset shift -- same approach as wadokei_face's own _wadokei_shift_day.
+static watch_date_time_t _kyureki_shift_day(watch_date_time_t day, int32_t delta_days) {
+    day.unit.hour = 0;
+    day.unit.minute = 0;
+    day.unit.second = 0;
+    uint32_t timestamp = watch_utility_date_time_to_unix_time(day, 0);
+    timestamp = (uint32_t)((int64_t)timestamp + (int64_t)delta_days * 86400);
+    return watch_utility_date_time_from_unix_time(timestamp, 0);
+}
+
 static void _kyureki_face_update(kyureki_state_t *state) {
     watch_date_time_t now = movement_get_local_date_time();
+    if (state->offset_days) now = _kyureki_shift_day(now, state->offset_days);
 
     if (state->last_computed_date.unit.year != now.unit.year ||
         state->last_computed_date.unit.month != now.unit.month ||
@@ -158,11 +171,36 @@ static void _kyureki_face_update(kyureki_state_t *state) {
         watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)rokuyo_names[rokuyo_index], (char *)rokuyo_names[rokuyo_index]);
     } else {
         watch_display_text(WATCH_POSITION_TOP_LEFT, (char *)rokuyo_names_classic[rokuyo_index]);
+        // TOP_RIGHT is otherwise unused by this face on classic -- while browsing
+        // (offset_days != 0), it shows the *solar* (Gregorian) day-of-month of the date being
+        // browsed to, not the offset count itself -- same idea as custom's own SECONDS tail
+        // below; blanked again once back on today. Always 1-31, so the tens digit is only
+        // ever blank, 1, 2, or 3 -- never one of the 0/4/7 values position 2's A=D=G triple
+        // alias (see Classic_LCD_Display_Mapping) can't render correctly, unlike the raw
+        // offset count this replaced (which had no such bound).
+        char offset_buf[3];
+        if (state->offset_days != 0) {
+            snprintf(offset_buf, sizeof(offset_buf), "%2d", now.unit.day);
+        } else {
+            snprintf(offset_buf, sizeof(offset_buf), "  ");
+        }
+        watch_display_text(WATCH_POSITION_TOP_RIGHT, offset_buf);
     }
 
-    // "month.day", decimal point lit between them; last 2 chars are "Ud" for a leap month.
+    // "month.day", decimal point lit between them. Last 2 chars (SECONDS) are normally "Ud"
+    // for a leap month, blank otherwise -- but on custom, while browsing (offset_days != 0),
+    // they show the *solar* (Gregorian) day-of-month of the date being browsed to instead
+    // (variable-width, e.g. " 6"/"31"), so the wearer can see what calendar date the browsed
+    // lunar date actually falls on. This is custom-only (classic's own TOP_RIGHT carries the
+    // same thing -- see above).
     char buf[7];
-    snprintf(buf, sizeof(buf), "%2d%02d%s", state->month_number, state->day_of_month, state->is_leap ? "Ud" : "  ");
+    char tail[3];
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM && state->offset_days != 0) {
+        snprintf(tail, sizeof(tail), "%2d", now.unit.day);
+    } else {
+        snprintf(tail, sizeof(tail), "%s", state->is_leap ? "Ud" : "  ");
+    }
+    snprintf(buf, sizeof(buf), "%2d%2d%s", state->month_number, state->day_of_month, tail);
     watch_set_decimal_if_available();
     watch_display_text(WATCH_POSITION_BOTTOM, buf);
 }
@@ -188,8 +226,35 @@ bool kyureki_face_loop(movement_event_t event, void *context) {
     switch (event.event_type) {
         case EVENT_ACTIVATE:
         case EVENT_TICK:
-        case EVENT_LOW_ENERGY_UPDATE:
             _kyureki_face_update(state);
+            break;
+        case EVENT_LOW_ENERGY_UPDATE:
+            // Matches moon_phase_ascii_face's own day-offset browsing: kill the offset here
+            // too, so a wearer who falls asleep mid-browse wakes up back on today rather than
+            // wherever they'd stepped to.
+            state->offset_days = 0;
+            _kyureki_face_update(state);
+            break;
+        case EVENT_ALARM_BUTTON_UP:
+            state->offset_days++;
+            _kyureki_face_update(state);
+            break;
+        case EVENT_ALARM_LONG_PRESS:
+            state->offset_days = 0;
+            _kyureki_face_update(state);
+            break;
+        case EVENT_LIGHT_BUTTON_DOWN:
+            // Swallow this (rather than falling through to the default handler) so the
+            // ordinary "tap Light to illuminate" behavior doesn't fire alongside the
+            // step-back-a-day action below -- same as moon_phase_ascii_face's own Light
+            // handling.
+            break;
+        case EVENT_LIGHT_BUTTON_UP:
+            state->offset_days--;
+            _kyureki_face_update(state);
+            break;
+        case EVENT_LIGHT_LONG_PRESS:
+            movement_illuminate_led();
             break;
         default:
             return movement_default_loop_handler(event);
@@ -199,6 +264,7 @@ bool kyureki_face_loop(movement_event_t event, void *context) {
 }
 
 void kyureki_face_resign(void *context) {
-    (void) context;
+    kyureki_state_t *state = (kyureki_state_t *)context;
+    state->offset_days = 0;
     watch_clear_decimal_if_available();
 }
