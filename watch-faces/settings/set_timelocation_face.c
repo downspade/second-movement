@@ -380,8 +380,11 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
                 watch_display_character('#', 8);
                 watch_display_character(state->working_latitude.sign ? 'S' : 'N', 9);
                 if (event.subsecond % 2) {
-                    watch_display_character(' ', 4 + state->active_digit);
+                    // active_digit==4 means the N/S sign is being edited -- blink only that
+                    // (position 9), not "4 + active_digit" (position 8, the static '#' degree
+                    // symbol, which isn't part of this step and shouldn't blink too).
                     if (state->active_digit == 4) watch_display_character(' ', 9);
+                    else watch_display_character(' ', 4 + state->active_digit);
                 }
             } else {
                 // Same fallback shape as sunrise_sunset_face's classic branch: sign, a blank
@@ -389,7 +392,9 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
                 // zero-padded number -- avoids the (0, 22) pixel below entirely, since it's
                 // not a free pixel on classic (see set_location_face.c's fix for why).
                 sprintf(buf, "%c %04d", state->working_latitude.sign ? '-' : '+', abs(_stl_latlon_from_struct(state->working_latitude)));
-                if (event.subsecond % 2) buf[state->active_digit] = ' ';
+                // +2: buf's first 2 characters are the sign and a separator (space, or the
+                // longitude's hundreds digit), before the 4 digits active_digit indexes into.
+                if (event.subsecond % 2) buf[state->active_digit + 2] = ' ';
                 watch_display_text(WATCH_POSITION_BOTTOM, buf);
             }
         } else {
@@ -407,13 +412,21 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
                 watch_display_character('#', 8);
                 watch_display_character(state->working_longitude.sign ? 'W' : 'E', 9);
                 if (event.subsecond % 2) {
-                    watch_display_character(' ', 4 + state->active_digit);
-                    if (state->active_digit == 0) watch_clear_pixel(0, 22);
-                    if (state->active_digit == 4) watch_display_character(' ', 9);
+                    // active_digit==4 means the E/W sign is being edited -- blink only that
+                    // (position 9), not "4 + active_digit" (position 8, the static '#' degree
+                    // symbol, which isn't part of this step and shouldn't blink too).
+                    if (state->active_digit == 4) {
+                        watch_display_character(' ', 9);
+                    } else {
+                        watch_display_character(' ', 4 + state->active_digit);
+                        if (state->active_digit == 0) watch_clear_pixel(0, 22);
+                    }
                 }
             } else {
                 sprintf(buf, "%c%05d", state->working_longitude.sign ? '-' : '+', abs(_stl_latlon_from_struct(state->working_longitude)));
-                if (event.subsecond % 2) buf[state->active_digit] = ' ';
+                // +2: buf's first 2 characters are the sign and a separator (space, or the
+                // longitude's hundreds digit), before the 4 digits active_digit indexes into.
+                if (event.subsecond % 2) buf[state->active_digit + 2] = ' ';
                 watch_display_text(WATCH_POSITION_BOTTOM, buf);
             }
         }
