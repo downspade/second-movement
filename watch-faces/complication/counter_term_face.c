@@ -50,18 +50,28 @@ static void _counter_term_face_update(counter_term_state_t *state) {
     // range (up to 65535) rather than the actual guarantee.
     char buf[6];
 
-    // Top row (all 5 characters -- TOP_LEFT's 3 plus TOP_RIGHT's 2, written together as
-    // WATCH_POSITION_TOP): days elapsed since the recorded start date, right-aligned in a
-    // 3-digit field with no leading zeros, followed by a literal "dy" unit suffix. Always 5
-    // characters (e.g. "  0dy", " 42dy", "365dy"), so every position is written on every
-    // update -- nothing is left stale from a previous face.
+    // Days elapsed since the recorded start date, right-aligned with no leading zeros, no unit
+    // suffix, wrapping back to 0 rather than sticking at the top of its range.
+    //
+    // Custom uses the full 5 characters of WATCH_POSITION_TOP (e.g. "    0", "   42", "99999"),
+    // wrapping past 99999. Classic uses only TOP_RIGHT (2 characters, positions 2/3) instead --
+    // it has no 5-character field to put this in at all, and unlike TOP_RIGHT's ones digit,
+    // its tens digit (2A/2D/2G sharing one address, see Classic_LCD_Display_Mapping) only
+    // renders correctly for 0-3 (no F segment either), so classic's count wraps at 40 (0-39)
+    // rather than 100.
     watch_date_time_t date_time = movement_get_local_date_time();
     uint32_t julian_now = _counter_term_face_juliandaynum(date_time.unit.year + WATCH_RTC_REFERENCE_YEAR, date_time.unit.month, date_time.unit.day);
     uint32_t julian_start = _counter_term_face_juliandaynum(state->start_year, state->start_month, state->start_day);
     uint32_t elapsed = (julian_now > julian_start) ? (julian_now - julian_start) : 0;
-    elapsed %= 1000; // wrap back to 0 past 999 rather than sticking at 999
-    sprintf(buf, "%3udy", (unsigned int) elapsed);
-    watch_display_text_with_fallback(WATCH_POSITION_TOP, buf, buf);
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+        elapsed %= 100000; // wrap back to 0 past 99999 rather than sticking at 99999
+        sprintf(buf, "%5u", (unsigned int) elapsed);
+        watch_display_text_with_fallback(WATCH_POSITION_TOP, buf, buf);
+    } else {
+        elapsed %= 40; // wrap back to 0 past 39 rather than sticking at 39
+        sprintf(buf, "%2u", (unsigned int) elapsed);
+        watch_display_text(WATCH_POSITION_TOP_RIGHT, buf);
+    }
 
     // Main line: the counter, in the hours+minutes positions only (4 digits total),
     // right-aligned with no leading zeros. Seconds isn't used by this face, so it's blanked the
