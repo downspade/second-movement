@@ -371,31 +371,50 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
         watch_clear_display();
         if (state->latlon_page == 0) {
             watch_display_text_with_fallback(WATCH_POSITION_TOP, "Latit", "LA");
-            watch_set_decimal_if_available();
-            watch_display_character('0' + state->working_latitude.tens, 4);
-            watch_display_character('0' + state->working_latitude.ones, 5);
-            watch_display_character('0' + state->working_latitude.tenths, 6);
-            watch_display_character('0' + state->working_latitude.hundredths, 7);
-            watch_display_character('#', 8);
-            watch_display_character(state->working_latitude.sign ? 'S' : 'N', 9);
-            if (event.subsecond % 2) {
-                watch_display_character(' ', 4 + state->active_digit);
-                if (state->active_digit == 4) watch_display_character(' ', 9);
+            if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+                watch_set_decimal_if_available();
+                watch_display_character('0' + state->working_latitude.tens, 4);
+                watch_display_character('0' + state->working_latitude.ones, 5);
+                watch_display_character('0' + state->working_latitude.tenths, 6);
+                watch_display_character('0' + state->working_latitude.hundredths, 7);
+                watch_display_character('#', 8);
+                watch_display_character(state->working_latitude.sign ? 'S' : 'N', 9);
+                if (event.subsecond % 2) {
+                    watch_display_character(' ', 4 + state->active_digit);
+                    if (state->active_digit == 4) watch_display_character(' ', 9);
+                }
+            } else {
+                // Same fallback shape as sunrise_sunset_face's classic branch: sign, a blank
+                // (where custom's degree-sign/N-S pair would be), then the 4 digits as one
+                // zero-padded number -- avoids the (0, 22) pixel below entirely, since it's
+                // not a free pixel on classic (see set_location_face.c's fix for why).
+                sprintf(buf, "%c %04d", state->working_latitude.sign ? '-' : '+', abs(_stl_latlon_from_struct(state->working_latitude)));
+                if (event.subsecond % 2) buf[state->active_digit] = ' ';
+                watch_display_text(WATCH_POSITION_BOTTOM, buf);
             }
         } else {
             watch_display_text_with_fallback(WATCH_POSITION_TOP, "Longi", "LO");
-            watch_set_decimal_if_available();
-            if (state->working_longitude.hundreds == 1) watch_set_pixel(0, 22);
-            watch_display_character('0' + state->working_longitude.tens, 4);
-            watch_display_character('0' + state->working_longitude.ones, 5);
-            watch_display_character('0' + state->working_longitude.tenths, 6);
-            watch_display_character('0' + state->working_longitude.hundredths, 7);
-            watch_display_character('#', 8);
-            watch_display_character(state->working_longitude.sign ? 'W' : 'E', 9);
-            if (event.subsecond % 2) {
-                watch_display_character(' ', 4 + state->active_digit);
-                if (state->active_digit == 0) watch_clear_pixel(0, 22);
-                if (state->active_digit == 4) watch_display_character(' ', 9);
+            if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+                watch_set_decimal_if_available();
+                // Handle leading 1 for longitudes >99. (0, 22) is a free pixel on custom, but
+                // NOT on classic -- it's classic's minutes-tens digit's A/D segment (see
+                // Classic_LCD_Display_Mapping), so this whole branch is custom-only.
+                if (state->working_longitude.hundreds == 1) watch_set_pixel(0, 22);
+                watch_display_character('0' + state->working_longitude.tens, 4);
+                watch_display_character('0' + state->working_longitude.ones, 5);
+                watch_display_character('0' + state->working_longitude.tenths, 6);
+                watch_display_character('0' + state->working_longitude.hundredths, 7);
+                watch_display_character('#', 8);
+                watch_display_character(state->working_longitude.sign ? 'W' : 'E', 9);
+                if (event.subsecond % 2) {
+                    watch_display_character(' ', 4 + state->active_digit);
+                    if (state->active_digit == 0) watch_clear_pixel(0, 22);
+                    if (state->active_digit == 4) watch_display_character(' ', 9);
+                }
+            } else {
+                sprintf(buf, "%c%05d", state->working_longitude.sign ? '-' : '+', abs(_stl_latlon_from_struct(state->working_longitude)));
+                if (event.subsecond % 2) buf[state->active_digit] = ' ';
+                watch_display_text(WATCH_POSITION_BOTTOM, buf);
             }
         }
         return;
