@@ -61,21 +61,22 @@ static const char *quarter_names[4] = {
 // trailing positions are simply never touched, same as the koku prefix's own 5/3-char
 // strings below. TOP isn't used at all on classic in this mode (see the mode==1 branch).
 //
-// Every letter here was chosen to avoid two classic-only pitfalls neither existing on
-// custom: (1) segment H doesn't exist anywhere in positions 4-9, so any letter whose font
-// byte needs it (T, M, R, I among the ones that would otherwise fit) can't be used at all --
-// worked around with lowercase t/r, N(+&)/n(+&) for M, and digit 1 for I, same idea as
-// custom's own I->i substitution above but for a different reason; (2) positions 4 and 6
-// alias 2A/2D... no, *this* group's A/D (not 2's A/D/G) -- see Classic_LCD_Display_Mapping's
-// "4A and 4D have the same address" / "6A and 6D" -- so a handful of letters (N, U, A, J
-// among these) only render correctly at 5 or 7, never 4 or 6; where a word has no way to
-// dodge that within 4 characters, the offending letter is just dropped and the rest shifted
-// with a leading/internal blank rather than shown wrong (辰 and 未 each lose one character
-// this way). Verified by walking every placement combination against the actual
-// Classic_LCD_Character_Set bit patterns, not by eye.
+// These are plain full spellings (T/M/R/I included) written as if none of the classic-only
+// positions-4-9 pitfalls applied -- and none of them actually need to be worked around by
+// hand, because watch_display_character() already does it: for classic, positions 4/6
+// silently substitute a same-looking-but-safe character for several letters whose font byte
+// needs the nonexistent H segment or would hit 4/6's A=D address sharing (t/T->+, U/V/W->u,
+// A->a, N/M/m->n, 7->&, L->!, J->j, o->O, c->C -- see watch_common_display.c's
+// watch_display_character(), the "special cases for positions 4 and 6" block), and I->l
+// applies at every position but 0. E.g. 辰's "tAtU" actually draws "+A+U" (both t's become
+// the plus sign, segments E/F/G, at positions 4 and 6); 未's "HtJI" draws "Ht" + j (not J) +
+// l (not I). Confirmed clean by walking every character through that exact substitution
+// logic against the real Classic_LCD_Character_Set bit patterns, not by eye -- this fooled
+// an earlier revision of this comment into rewriting several of these with manual lowercase
+// substitutes and dropped/shifted letters, unaware the display driver already handled it.
 static const char *branch_names_classic[12] = {
-    " NE ", " US1", " trA", " U  ", " t t", "n&1 ",
-    " Un&", "Ht J", "SArU", " tr1", "1N U", "1   ",
+    " NE ", " USI", "torA", " U  ", "tAtU", "n&1 ",
+    "Un&A", "HtJI", "SArU", "torI", "1NU ", "  I ",
 };
 
 // Quarter markers for classic's SECONDS (2 characters: digit + lowercase t for "-tsu").
