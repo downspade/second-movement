@@ -74,7 +74,7 @@ static const char *quarter_names[4] = {
 // this way). Verified by walking every placement combination against the actual
 // Classic_LCD_Character_Set bit patterns, not by eye.
 static const char *branch_names_classic[12] = {
-    " NE ", " US1", " trA", " U  ", " t t", " n&1",
+    " NE ", " US1", " trA", " U  ", " t t", "n&1 ",
     " Un&", "Ht J", "SArU", " tr1", "1N U", "1   ",
 };
 
