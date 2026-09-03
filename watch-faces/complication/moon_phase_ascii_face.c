@@ -787,8 +787,8 @@ static void _update(moon_phase_ascii_state_t *state) {
     // Classic has no 3-character slot at all, not enough for a fractional day -- so unlike
     // custom, this rounds to the nearest whole day instead of just truncating buf's tenths
     // digit off (which would silently floor towards the wrong day half the time), and shows
-    // it at TOP_RIGHT (2 digits) rather than TOP_LEFT, which is otherwise unused by this face
-    // on classic (WATCH_POSITION_SECONDS carries the day-of-month there instead).
+    // it at SECONDS (2 digits) rather than TOP_LEFT, which is otherwise unused by this face on
+    // classic -- TOP_RIGHT carries the day-of-month there instead (see the swap below).
     char buf_classic[3];
     int rounded_days = (int)(currentday + 0.5);
     snprintf(buf_classic, sizeof(buf_classic), "%2d", rounded_days);
@@ -801,7 +801,13 @@ static void _update(moon_phase_ascii_state_t *state) {
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
         watch_display_text_with_fallback(WATCH_POSITION_TOP, buf, buf);
     } else {
-        watch_display_text(WATCH_POSITION_TOP_RIGHT, buf_classic);
+        watch_display_text(WATCH_POSITION_SECONDS, buf_classic);
+        // On custom, TOP's 5-char write above covers positions 0/1/10 -- the same ones
+        // _update_calendar()'s TOP_LEFT eclipse-type code (TO/PA/PE) uses -- so returning
+        // from calendar mode always overwrites it there. Classic's normal mode never
+        // otherwise touches TOP_LEFT, so without this it would leave calendar mode's last
+        // TO/PA/PE sitting on screen indefinitely after Alarm-long-press back out.
+        watch_display_text(WATCH_POSITION_TOP_LEFT, "  ");
     }
 
     // Hours/minutes: the 4-cell phase bar. _display_segments now draws '=' and '|' on classic
@@ -871,9 +877,22 @@ static void _update(moon_phase_ascii_state_t *state) {
     if (visible) watch_set_indicator(WATCH_INDICATOR_PM);
     else watch_clear_indicator(WATCH_INDICATOR_PM);
 
-    // Seconds: day of the month.
-    sprintf(buf, "%2d", date_time.unit.day);
-    watch_display_text(WATCH_POSITION_SECONDS, buf);
+    // Day of the month: SECONDS on custom, swapped to TOP_RIGHT on classic (which puts the
+    // moon age at SECONDS instead -- see that assignment above for why). Only shown while
+    // actively browsing (state->offset != 0, see EVENT_ALARM/LIGHT_BUTTON_UP below) -- on
+    // today's date it'd just be repeating information already on the wearer's actual watch
+    // face, so it's left blank there instead, same idea as kyureki_face's own offset-day
+    // display.
+    if (state->offset != 0) {
+        sprintf(buf, "%2d", date_time.unit.day);
+    } else {
+        sprintf(buf, "  ");
+    }
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+        watch_display_text(WATCH_POSITION_SECONDS, buf);
+    } else {
+        watch_display_text(WATCH_POSITION_TOP_RIGHT, buf);
+    }
 }
 
 // Renders calendar mode: browsing lunar_eclipses[state->calendar_index] independent of
