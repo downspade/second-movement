@@ -42,6 +42,16 @@ static const char *rokuyo_names[6] = {
     "SENSY", "TOMBK", "SEMBU", "BTMTS", "TAIAN", "SHAKK",
 };
 
+// 先勝,友引,先負,仏滅,大安,赤口, 2 characters each at TOP_LEFT (positions 0/1) on classic.
+// Position 0 is fully independent (all 8 segments), but position 1 aliases 1B/1C and 1E/1F
+// to single addresses (see Classic_LCD_Display_Mapping), so a position-1 character only
+// renders correctly if its font byte's B==C and E==F. An earlier revision used 'S' as 先勝's
+// second character ("SS"), which doesn't satisfy that (B=0/C=1) -- replaced with 'E' here.
+// All 6 second characters (E/B/B/t/A/H) verified B==C and E==F at position 1.
+static const char *rokuyo_names_classic[6] = {
+    "SE", "TB", "SB", "Bt", "TA", "SH",
+};
+
 static uint16_t _kyureki_day_of_year(uint8_t month, uint8_t day, uint16_t year) {
     uint16_t doy = 0;
     for (uint8_t m = 1; m < month; m++) doy += watch_utility_days_in_month(m, year);
@@ -137,7 +147,18 @@ static void _kyureki_face_update(kyureki_state_t *state) {
     // against an independent lunar calendar reference) came out as (7+19)%6=2 -> 先負
     // instead. month_number/day_of_month are always >=1, so m+d-2 never goes negative.
     uint8_t rokuyo_index = (state->month_number + state->day_of_month - 2) % 6;
-    watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)rokuyo_names[rokuyo_index], (char *)rokuyo_names[rokuyo_index]);
+    // watch_display_text_with_fallback()'s TOP case only reaches all 5 characters on custom;
+    // its classic fallback path falls through to plain watch_display_text(), which only ever
+    // writes the *first 2* of whatever string it's given -- so passing rokuyo_names (the
+    // 5-char custom spelling) as its own fallback would silently show the wrong abbreviation
+    // on classic (e.g. 友引's "TOMBK" truncates to "TO", not the "TB" rokuyo_names_classic
+    // actually calls for). rokuyo_names_classic is the deliberately-chosen 2-character form
+    // instead (see its own comment for the position-1 aliasing it was checked against).
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+        watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)rokuyo_names[rokuyo_index], (char *)rokuyo_names[rokuyo_index]);
+    } else {
+        watch_display_text(WATCH_POSITION_TOP_LEFT, (char *)rokuyo_names_classic[rokuyo_index]);
+    }
 
     // "month.day", decimal point lit between them; last 2 chars are "Ud" for a leap month.
     char buf[7];
