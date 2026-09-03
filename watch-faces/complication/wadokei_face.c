@@ -56,6 +56,34 @@ static const char *quarter_names[4] = {
     "Hitotu", "Futatu", "Mittu ", "Yottu ",
 };
 
+// Classic-LCD branch names for mode 1: 4 characters each, occupying HOURS+MINUTES (the
+// left 4 of WATCH_POSITION_BOTTOM's 6) -- written via a single BOTTOM call so unused
+// trailing positions are simply never touched, same as the koku prefix's own 5/3-char
+// strings below. TOP isn't used at all on classic in this mode (see the mode==1 branch).
+//
+// Every letter here was chosen to avoid two classic-only pitfalls neither existing on
+// custom: (1) segment H doesn't exist anywhere in positions 4-9, so any letter whose font
+// byte needs it (T, M, R, I among the ones that would otherwise fit) can't be used at all --
+// worked around with lowercase t/r, N(+&)/n(+&) for M, and digit 1 for I, same idea as
+// custom's own I->i substitution above but for a different reason; (2) positions 4 and 6
+// alias 2A/2D... no, *this* group's A/D (not 2's A/D/G) -- see Classic_LCD_Display_Mapping's
+// "4A and 4D have the same address" / "6A and 6D" -- so a handful of letters (N, U, A, J
+// among these) only render correctly at 5 or 7, never 4 or 6; where a word has no way to
+// dodge that within 4 characters, the offending letter is just dropped and the rest shifted
+// with a leading/internal blank rather than shown wrong (辰 and 未 each lose one character
+// this way). Verified by walking every placement combination against the actual
+// Classic_LCD_Character_Set bit patterns, not by eye.
+static const char *branch_names_classic[12] = {
+    " NE ", " US1", " trA", " U  ", " t t", " n&1",
+    " Un&", "Ht J", "SArU", " tr1", "1N U", "1   ",
+};
+
+// Quarter markers for classic's SECONDS (2 characters: digit + lowercase t for "-tsu").
+// No H-segment or position-4/6 issue here at all -- positions 8/9 have neither pitfall.
+static const char *quarter_names_classic[4] = {
+    "1t", "2t", "3t", "4t",
+};
+
 // Traditional bell-count ("koku") names, per koku.csv: each branch has a bell-count digit
 // (cycling 9,8,7,6,5,4 twice per day) and a time-of-day prefix. Quarters 1-2 (一つ/二つ)
 // use the plain name; quarters 3-4 (三つ/四つ) append "HAN" (半).
@@ -64,6 +92,20 @@ static const char *koku_prefix[12] = {
     "AKTKi", "AKTKi", "AKTKi", "AKE  ", "ASA  ", "ASA  ",
     "HIRU ", "HIRU ", "HIRU ", "KURE ", "YORU ", "YORU ",
 };
+
+// Classic-LCD prefixes for mode 0, 2 characters at TOP_LEFT (positions 0/1). Unlike the
+// BOTTOM/HOURS/MINUTES/SECONDS group (positions 4-9), position 0 is fully independent (all
+// 8 segments, no aliasing) but position 1 aliases 1B/1C and 1E/1F to single addresses (see
+// Classic_LCD_Display_Mapping) -- so a position-1 character only renders correctly if its
+// font byte's B==C and E==F. An earlier revision used 'k'/'S'/'r' as the second character for
+// 6 of these 12 (AKE/ASA/ASA/KURE/YORU/YORU), none of which satisfy that -- replaced here
+// with 'E'/'A'/'A'/'U'/'O'/'O' instead, all verified B==C and E==F at position 1. All 12
+// entries now render correctly.
+static const char *koku_prefix_classic[12] = {
+    "At", "At", "At", "AE", "AA", "AA",
+    "H1", "H1", "H1", "KU", "YO", "YO",
+};
+
 static const uint8_t koku_digit[12] = { 9, 8, 7, 6, 5, 4, 9, 8, 7, 6, 5, 4 };
 
 // Per koku.csv: only 卯 and 酉 split their four quarters across two different 24ths-of-a-
@@ -199,18 +241,41 @@ static void _wadokei_face_update(wadokei_state_t *state) {
     uint8_t quarter_index = state->is_daytime ? day_piece_quarter[piece_index] : night_piece_quarter[piece_index];
 
     if (state->mode == 1) {
-        watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)branch_names[branch_index], (char *)branch_names[branch_index]);
-        watch_display_text(WATCH_POSITION_BOTTOM, (char *)quarter_names[quarter_index]);
+        if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+            watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)branch_names[branch_index], (char *)branch_names[branch_index]);
+            watch_display_text(WATCH_POSITION_BOTTOM, (char *)quarter_names[quarter_index]);
+        } else {
+            // Classic has no TOP row here at all -- everything lives in BOTTOM's 6
+            // characters: the branch name in the first 4 (HOURS+MINUTES), the quarter
+            // marker in the last 2 (SECONDS). See branch_names_classic's own comment for
+            // why these strings look the way they do.
+            watch_display_text(WATCH_POSITION_BOTTOM, (char *)branch_names_classic[branch_index]);
+            watch_display_text(WATCH_POSITION_SECONDS, (char *)quarter_names_classic[quarter_index]);
+        }
         return;
     }
 
-    const char *prefix = koku_prefix[branch_index];
     uint8_t digit = koku_digit[branch_index];
     bool half = quarter_index >= 2;
     char buf[7];
-    snprintf(buf, sizeof(buf), half ? "%dtuHan" : "%dtu   ", digit);
-    watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)prefix, (char *)prefix);
-    watch_display_text(WATCH_POSITION_BOTTOM, buf);
+
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+        const char *prefix = koku_prefix[branch_index];
+        snprintf(buf, sizeof(buf), half ? "%dtuHan" : "%dtu   ", digit);
+        watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)prefix, (char *)prefix);
+        watch_display_text(WATCH_POSITION_BOTTOM, buf);
+    } else {
+        // Classic: prefix goes in TOP_LEFT (2 characters, positions 0/1 -- see
+        // koku_prefix_classic's own comment for the position-1 aliasing this runs into for
+        // some entries). BOTTOM gets a leading blank (position 4, otherwise unused here) then
+        // the digit at position 5 (no aliasing there, so any digit 4-9 is safe) then either
+        // "han " or 4 blanks filling positions 6-9 -- "han"'s h/a land on 6/7, both clear of
+        // both classic pitfalls (no H-segment needed, and h/a's A and D bits agree, so the
+        // 6/4-alias that broke things elsewhere in this face doesn't apply to them).
+        watch_display_text(WATCH_POSITION_TOP_LEFT, (char *)koku_prefix_classic[branch_index]);
+        snprintf(buf, sizeof(buf), half ? " %dhan " : " %d    ", digit);
+        watch_display_text(WATCH_POSITION_BOTTOM, buf);
+    }
 }
 
 void wadokei_face_setup(uint8_t watch_face_index, void ** context_ptr) {
