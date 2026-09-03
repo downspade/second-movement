@@ -249,6 +249,11 @@ static void _wadokei_face_update(wadokei_state_t *state) {
             // characters: the branch name in the first 4 (HOURS+MINUTES), the quarter
             // marker in the last 2 (SECONDS). See branch_names_classic's own comment for
             // why these strings look the way they do.
+            //
+            // Mode 0's classic branch (below) writes a 2-character prefix to TOP_LEFT; this
+            // mode never touches it, so without an explicit blank here, switching from mode 0
+            // to mode 1 would leave that prefix sitting on screen indefinitely.
+            watch_display_text(WATCH_POSITION_TOP_LEFT, "  ");
             watch_display_text(WATCH_POSITION_BOTTOM, (char *)branch_names_classic[branch_index]);
             watch_display_text(WATCH_POSITION_SECONDS, (char *)quarter_names_classic[quarter_index]);
         }
