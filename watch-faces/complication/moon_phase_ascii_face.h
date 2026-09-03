@@ -34,10 +34,10 @@
  * toggle into this one -- this face only ever shows the pictorial
  * representation below.
  *
- * Top row: the moon's age in days -- a variable-width integer part with no
- * leading zero, plus a fixed single fractional digit, right-aligned with a
- * blank trailing character (e.g. an age of 15.2 days displays as " 152 ",
- * an age of 5.2 as "  52 ").
+ * Top-left: the moon's age in days -- a variable-width integer part with no
+ * leading zero, plus a fixed single fractional digit, right-aligned to 3
+ * characters (e.g. an age of 15.2 days displays as "152", an age of 5.2 as
+ * " 52").
  *
  * Hours/minutes positions: a 4-character bar that sweeps as the moon waxes
  * and wanes, 10 states per cycle -- blank for new, "   |" a hair-thin sliver
@@ -71,11 +71,15 @@
  * lunar_eclipses in the .c file) -- a separate mode, independent of the day
  * offset above, for browsing the eclipse table directly:
  *
- *  - Top-left: the eclipse's rate (magnitude_pct; over 100% uses all 3 digit
- *    slots, see the comment at that sprintf in the .c file).
- *  - Top-right: the last 2 digits of the year.
- *  - Hours/minutes/seconds: month, day, and hour, all local to the wearer
- *    (the table stores UTC).
+ *  - Top-left: the eclipse's rate -- magnitude_pct on custom (over 100% uses
+ *    all 3 digit slots, see the comment at that sprintf in the .c file), or a
+ *    TO(tal)/PA(rtial)/PE(numbral) type code on classic (which has no room
+ *    for a 3-digit percentage -- see the comment in the .c file).
+ *  - Top-right: the peak hour.
+ *  - Hours/minutes: month and day, all local to the wearer (the table stores
+ *    UTC).
+ *  - Seconds: the last 2 digits of the year (swapped down here from the more
+ *    obvious top-right spot -- see the comment in the .c file for why).
  *  - The PM ("Present Moon") indicator lights up if the eclipse happens at
  *    night at the saved location -- i.e. it's actually visible there.
  *

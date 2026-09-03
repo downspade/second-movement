@@ -617,14 +617,22 @@ void moon_phase_ascii_face_activate(void *context) {
 #define SEG_F (1 << 5)
 
 // Lights exactly the given segments (and clears the rest) at a raw display position. Bypasses
-// the font -- needed for glyphs no character in Custom_LCD_Character_Set matches exactly (e.g.
-// the plain double-bar "=" look, which is just segments A+D; its actual '=' character is the
-// middle+bottom bars instead) -- via the same digit mapping watch_display_character() itself
-// uses.
+// the font -- needed for glyphs no character in Custom_LCD_Character_Set/Classic_LCD_Character_Set
+// matches exactly (e.g. the plain double-bar "=" look, which is just segments A+D; its actual
+// '=' character is the middle+bottom bars instead) -- via the same digit mapping
+// watch_display_character() itself uses. Works on both LCD types: positions 4-7 (the only ones
+// the phase bar ever passes here) have A/B/C/D/E/F all real, independently-addressable segments
+// on Classic_LCD_Display_Mapping too (A and D happen to share an address at two of the four
+// positions, but that only means "on" for one implies "on" for the other -- never a problem for
+// masks like SEG_A|SEG_D that already want them equal).
 static void _display_segments(uint8_t position, uint8_t mask) {
-    if (watch_get_lcd_type() != WATCH_LCD_TYPE_CUSTOM) return;
+    watch_lcd_type_t lcd_type = watch_get_lcd_type();
+    const digit_mapping_t *mapping;
+    if (lcd_type == WATCH_LCD_TYPE_CUSTOM) mapping = Custom_LCD_Display_Mapping;
+    else if (lcd_type == WATCH_LCD_TYPE_CLASSIC) mapping = Classic_LCD_Display_Mapping;
+    else return; // LCD type not yet determined (autodetect) -- nothing safe to draw to
 
-    digit_mapping_t segmap = Custom_LCD_Display_Mapping[position];
+    digit_mapping_t segmap = mapping[position];
     for (int i = 0; i < 8; i++) {
         if (segmap.segment[i].value == segment_does_not_exist) continue;
         if (mask & (1 << i)) watch_set_pixel(segmap.segment[i].address.com, segmap.segment[i].address.seg);
@@ -766,27 +774,38 @@ static void _update(moon_phase_ascii_state_t *state) {
         if (currentday > phase_changes[phase_index] && currentday <= phase_changes[phase_index + 1]) break;
     }
 
-    // Top row: moon age in days. Integer part is variable width (no leading
-    // zero); fractional part is always exactly 1 digit. Right-aligned with a
-    // fixed trailing blank, so the tenths digit always lands in the same
-    // spot regardless of whether the integer part is 1 or 2 digits.
-    int tenths = (int)(currentday * 10.0 + 0.5); // 0-295 in practice (age is 0-29.5 days),
-                                                  // so content below is always 2-3 characters --
-                                                  // gcc can't see that bound through the double
-                                                  // math above, hence the pragmas.
-    char content[16];
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wformat-truncation"
-    snprintf(content, sizeof(content), "%d%d", tenths / 10, tenths % 10);
-    snprintf(buf, sizeof(buf), "%*s ", 4, content);
-    #pragma GCC diagnostic pop
-    // watch_display_text() only writes the first 2 of TOP's 5 characters (it
-    // falls through to the same case as WATCH_POSITION_TOP_LEFT); the other 3
-    // -- including the two that alias WATCH_POSITION_TOP_RIGHT -- only get
-    // written via this fallback variant's TOP-specific position mapping.
-    watch_display_text_with_fallback(WATCH_POSITION_TOP, buf, buf);
+    // Top: moon age in days, with an actual decimal point -- "15.4" -- rather than the
+    // digits-only "154" TOP_LEFT was stuck with (positions 0/1/10 have no spare segment to
+    // borrow for a point). WATCH_POSITION_TOP gets custom LCD's full 5 characters; '%4.1f'
+    // right-aligns the (variable-width, no-leading-zero) integer part + '.' + one fractional
+    // digit into 4 of them, and the trailing space is the 5th. The '.' itself is just the
+    // font's own '.' glyph (a single low segment, same as '_') landing at position 10 (the
+    // TOP fallback mapping's 3rd character slot) -- not watch_set_decimal_if_available(),
+    // which is a single fixed pixel positioned for WATCH_POSITION_BOTTOM's own decimal use
+    // (see watch_display_float_with_best_effort), nowhere near TOP.
+    snprintf(buf, sizeof(buf), "%4.1f ", currentday);
+    // Classic has no 3-character slot at all, not enough for a fractional day -- so unlike
+    // custom, this rounds to the nearest whole day instead of just truncating buf's tenths
+    // digit off (which would silently floor towards the wrong day half the time), and shows
+    // it at TOP_RIGHT (2 digits) rather than TOP_LEFT, which is otherwise unused by this face
+    // on classic (WATCH_POSITION_SECONDS carries the day-of-month there instead).
+    char buf_classic[3];
+    int rounded_days = (int)(currentday + 0.5);
+    snprintf(buf_classic, sizeof(buf_classic), "%2d", rounded_days);
+    // watch_display_text_with_fallback() can't target different positions for its two
+    // branches (the fallback string still goes through the *same* `location`), so custom vs.
+    // classic needs an explicit split here instead of relying on that fallback mechanism --
+    // and plain watch_display_text() only ever writes the first 2 of TOP's 5 characters (it
+    // falls through to the same case as TOP_LEFT), so custom specifically needs the
+    // _with_fallback variant's TOP case to reach all 5.
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+        watch_display_text_with_fallback(WATCH_POSITION_TOP, buf, buf);
+    } else {
+        watch_display_text(WATCH_POSITION_TOP_RIGHT, buf_classic);
+    }
 
-    // Hours/minutes: the 4-cell phase bar.
+    // Hours/minutes: the 4-cell phase bar. _display_segments now draws '=' and '|' on classic
+    // too (see its own comment), so this needs no display-type-specific handling at all.
     const char *art = ascii_art_moon[phase_index];
     char cells[4];
     if (southern) {
@@ -858,11 +877,13 @@ static void _update(moon_phase_ascii_state_t *state) {
 }
 
 // Renders calendar mode: browsing lunar_eclipses[state->calendar_index] independent of
-// state->offset. Top-left shows the eclipse rate (magnitude_pct; a couple of total eclipses
-// run over 100%, using all 3 of TOP_LEFT's slots for those -- see the comment at that
-// sprintf); top-right the last 2 digits of the year; the
-// hours/minutes/seconds positions the month, day, and hour, all local to the wearer (the
-// table stores UTC). The PM indicator (repurposed as "Present Moon", see _update()'s own
+// state->offset. Top-left shows the eclipse rate (magnitude_pct on custom; a couple of total
+// eclipses run over 100%, using all 3 of TOP_LEFT's slots for those -- see the comment at that
+// sprintf -- or a TO/PA/PE type code on classic, see the comment above that assignment);
+// top-right the peak hour; the hours/minutes positions the month and day, all local to the
+// wearer (the table stores UTC); seconds the last 2 digits of the year (see the comment at
+// that assignment for why year and hour swap their more obvious positions). The PM indicator
+// (repurposed as "Present Moon", see _update()'s own
 // indicator block for why) lights up if the eclipse's local moment falls at night at the saved
 // location -- since eclipses only happen at full moon, and a full moon rises near sunset and
 // sets near sunrise, "is it night" is essentially "is the moon up", without needing a separate
@@ -905,16 +926,42 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
     // 2 slots (ones digit in the 2nd), with the 3rd slot blanked.
     if (e->magnitude_pct > 100) sprintf(buf, "%3d", e->magnitude_pct);
     else sprintf(buf, "%2d ", e->magnitude_pct);
-    watch_display_text_with_fallback(WATCH_POSITION_TOP_LEFT, buf, buf);
+    // Classic only has the 2 slots (no position 10), not enough room for a 3-digit percentage
+    // -- and unlike the moon age, there's no obvious rounding that keeps a percentage
+    // meaningful in 2 digits either. So instead of a number, this shows the eclipse type as a
+    // 2-letter code: TO(tal), PA(rtial), or PE(numbral). Positions 0/1 render this cleanly --
+    // unlike digits (see the B/C and E/F address-sharing on position 1), none of T/O/P/A/E hit
+    // that aliasing, since every letter used here keeps its aliased segment-pairs in agreement.
+    char buf_classic[3];
+    if (e->penumbral) snprintf(buf_classic, sizeof(buf_classic), "PE");
+    else if (e->magnitude_pct >= 100) snprintf(buf_classic, sizeof(buf_classic), "TO");
+    else snprintf(buf_classic, sizeof(buf_classic), "PA");
+    watch_display_text_with_fallback(WATCH_POSITION_TOP_LEFT, buf, buf_classic);
 
-    sprintf(buf, "%02d", (WATCH_RTC_REFERENCE_YEAR + (locally_convertible ? local.unit.year : e->year)) % 100);
+    // TOP_RIGHT and SECONDS swap their usual roles here (peak hour up top, year down at
+    // SECONDS) rather than the more obvious year-at-TOP_RIGHT/hour-at-SECONDS pairing --
+    // classic's TOP_RIGHT (position 2) has no F segment, so a tens digit needing it (4/5/6/8/9)
+    // doesn't render fully. The peak hour's tens digit is always 0-2, avoiding that; the year's
+    // last-2-digits' tens digit ranges over the full 0-9 and would often need the missing F
+    // (e.g. any year ending 40-99 except the 70s). SECONDS has no such gap on either LCD type,
+    // so that's where the year belongs instead.
+    //
+    // Zero-padding still isn't safe even restricted to 0-2, though: 2A/2D/2G share one
+    // address (see Classic_LCD_Display_Mapping), and '0' is the one digit 0-2 whose font byte
+    // wants A on but G off -- G is written last, so it silently overrides A back off, leaving
+    // '0' displayed without its top-left stroke. Custom's position 2 has no such address
+    // sharing (verified against Custom_LCD_Display_Mapping), so only classic needs the leading
+    // zero suppressed -- same fix as month/day's own "%2d" below, just conditional here since
+    // custom can safely keep the zero-padded look this position used to have as SECONDS.
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) sprintf(buf, "%02d", local.unit.hour);
+    else sprintf(buf, "%2d", local.unit.hour);
     watch_display_text(WATCH_POSITION_TOP_RIGHT, buf);
 
     sprintf(buf, "%2d", local.unit.month);
     watch_display_text(WATCH_POSITION_HOURS, buf);
     sprintf(buf, "%2d", local.unit.day);
     watch_display_text(WATCH_POSITION_MINUTES, buf);
-    sprintf(buf, "%02d", local.unit.hour); // 24-hour, always 2 digits
+    sprintf(buf, "%02d", (WATCH_RTC_REFERENCE_YEAR + (locally_convertible ? local.unit.year : e->year)) % 100);
     watch_display_text(WATCH_POSITION_SECONDS, buf);
 
     watch_clear_colon();
