@@ -4,7 +4,7 @@
 #define FLUID_FACE_H_
 
 /*
- * FLUID FACE (custom LCD only)
+ * FLUID FACE
  *
  * Normally shows a plain digital clock -- hours, minutes, seconds, weekday,
  * day of month, and the colon. A hard knock (real accelerometer shock on
@@ -15,9 +15,10 @@
  * time over a couple of seconds -- seconds (and weekday/day, if a boundary
  * happens to pass) keep advancing throughout, since the target it's
  * reassembling into is recomputed fresh every tick. Every indicator --
- * PM/24H, the alarm (SIGNAL) bell, the hourly chime (BELL), and the
- * low-battery warning (ARROWS) -- is baked into that same pattern, so they
- * all join the effect just like the digits do.
+ * PM/24H, the alarm (SIGNAL) bell, and the hourly chime (BELL) -- is baked
+ * into that same pattern, so they all join the effect just like the digits
+ * do. On the custom LCD only, the low-battery warning (ARROWS) joins them
+ * too -- the classic module has no such icon.
  *
  * Real hardware calibration is unverified (see the ACCEL_* constants in
  * fluid_face.c) -- expect to retune the trigger/quiet thresholds and the
@@ -25,9 +26,13 @@
  * "how hard is 2G" is inherently a physical question and because lis2dw.c's
  * g-unit conversion is known-imprecise (see CLAUDE.md).
  *
- * See fluid_face_data.h for the per-segment position/adjacency data this
- * is built from (generated from watch-library/simulator/shell.html's
- * custom-LCD artwork).
+ * Supports both display types via FORCE_CUSTOM_LCD_TYPE/FORCE_CLASSIC_LCD_TYPE
+ * (see the Makefile's DISPLAY= flag). See fluid_face_data.h (custom) and
+ * fluid_face_classic_data.h (classic) for the per-segment position/adjacency
+ * data each is built from -- both generated from watch-library/simulator/
+ * shell.html's segment artwork (plus, for classic, watch_common_display.h's
+ * Classic_LCD_Display_Mapping, since classic's segments alias/omit some
+ * font bits that the artwork alone doesn't reveal).
  *
  * Press MODE to leave. Press ALARM to manually toggle shatter/return (this
  * is the only way to see it happen in the simulator); long-press ALARM to
@@ -37,7 +42,11 @@
 #include "movement.h"
 #include "lis2dw.h"
 
+#if defined(FORCE_CLASSIC_LCD_TYPE)
+#define FLUID_NUM_PIXELS 72
+#else
 #define FLUID_NUM_PIXELS 92
+#endif
 #define FLUID_ACCEL_WINDOW_LEN 8 // must match FLUID_TICK_FREQUENCY in fluid_face.c (1 second of samples)
 
 typedef enum {

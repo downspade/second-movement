@@ -8,7 +8,11 @@
 #include "watch_utility.h"
 #include "watch_common_display.h"
 #include "lis2dw.h"
+#if defined(FORCE_CLASSIC_LCD_TYPE)
+#include "fluid_face_classic_data.h"
+#else
 #include "fluid_face_data.h"
+#endif
 
 #define FLUID_TICK_FREQUENCY 8
 
@@ -98,35 +102,52 @@
 // fluid_face_data.h (see gen_fluid_header.py's sort key), so it's always
 // index 0. It joins the simulation like any other segment now -- no special
 // handling needed beyond seeding it into the target pattern.
+//
+// On classic the colon is a different (com, seg) that doesn't happen to sort
+// first, so fluid_face_classic_data.h #defines this one directly instead.
+#if !defined(FORCE_CLASSIC_LCD_TYPE)
 #define FLUID_COLON_PIXEL 0
+#endif
 
-// PM (com=3, seg=21), 24H (com=2, seg=21), SIGNAL/alarm (com=0, seg=21), BELL/time-signal
-// (com=1, seg=21), and ARROWS/low-battery (com=2, seg=0) indicators, by the same com*23+seg
-// ordering as the colon above. All just ordinary pixels in the target pattern now --
-// previously PM/24H were drawn separately via watch_set_indicator() after the fact, which
-// both kept them fixed/unaffected by the shatter and fluid_step() effects (defeating the
-// point of those) and, worse, got silently wiped every tick by the grain loop redrawing
-// every *other* pixel these addresses are also part of. SIGNAL/BELL/ARROWS had the exact
-// same bug (fluid_redraw() draws all 92 pixels from state->filled every tick, and
-// fluid_compute_time_pattern's memset zeroes all of them first) but were never folded into
-// the pattern when PM/24H were fixed, so the alarm, chime, and low-battery icons were
-// silently cleared again on the very next tick after being set -- making it look (and, via
-// EVENT_ALARM_LONG_PRESS's fluid_toggle_time_signal, *feel*) like the chime setting wasn't
-// sticking, even though the underlying state->time_signal_enabled it actually acts on was
-// unaffected the whole time.
+// PM, 24H, SIGNAL/alarm, BELL/time-signal, and (custom LCD only) ARROWS/low-battery
+// indicators, all just ordinary pixels in the target pattern now -- previously PM/24H were
+// drawn separately via watch_set_indicator() after the fact, which both kept them
+// fixed/unaffected by the shatter and fluid_step() effects (defeating the point of those)
+// and, worse, got silently wiped every tick by the grain loop redrawing every *other* pixel
+// these addresses are also part of. SIGNAL/BELL/ARROWS had the exact same bug (fluid_redraw()
+// draws every pixel from state->filled every tick, and fluid_compute_time_pattern's memset
+// zeroes all of them first) but were never folded into the pattern when PM/24H were fixed, so
+// the alarm, chime, and low-battery icons were silently cleared again on the very next tick
+// after being set -- making it look (and, via EVENT_ALARM_LONG_PRESS's fluid_toggle_time_signal,
+// *feel*) like the chime setting wasn't sticking, even though the underlying
+// state->time_signal_enabled it actually acts on was unaffected the whole time.
+//
+// On classic, these five (minus ARROWS -- the module has no low-battery icon) are instead
+// #defined directly in fluid_face_classic_data.h: com*23+seg is a custom-LCD-specific
+// pixel-index formula (23 segs/COM line there; classic's pixel order has no such regularity,
+// so its data header hands over plain literal indices instead).
+#if !defined(FORCE_CLASSIC_LCD_TYPE)
 #define FLUID_PM_PIXEL (3 * 23 + 21)
 #define FLUID_24H_PIXEL (2 * 23 + 21)
 #define FLUID_SIGNAL_PIXEL (0 * 23 + 21)
 #define FLUID_BELL_PIXEL (1 * 23 + 21)
 #define FLUID_ARROWS_PIXEL (2 * 23 + 0)
+#endif
 
-// Segment bits for weekday abbreviation letters ("MON".."SUN", always uppercase A-Z from
-// watch_utility_get_long_weekday()). Custom_LCD_Character_Set (watch_common_display.h) is
-// already indexed by character - 0x20 with this exact bit convention (bit 0 = segment A
-// .. bit 7 = segment H, same as fluid_digit_font), so reuse it directly rather than
-// hand-copying a subset that could silently drift out of sync with the real font.
+// Segment bits for weekday abbreviation letters, always uppercase A-Z from
+// watch_utility_get_long_weekday() ("MON".."SUN", custom LCD -- 3 characters) or
+// watch_utility_get_weekday() ("MO".."SU", classic -- 2 characters, see
+// fluid_compute_time_pattern). Custom_LCD_Character_Set / Classic_LCD_Character_Set
+// (watch_common_display.h) are already indexed by character - 0x20 with this exact bit
+// convention (bit 0 = segment A .. bit 7 = segment H, same as fluid_digit_font), so reuse
+// them directly rather than hand-copying a subset that could silently drift out of sync
+// with the real font.
 static inline uint8_t fluid_weekday_char_bits(char c) {
+#if defined(FORCE_CLASSIC_LCD_TYPE)
+    return Classic_LCD_Character_Set[(uint8_t) c - 0x20];
+#else
     return Custom_LCD_Character_Set[(uint8_t) c - 0x20];
+#endif
 }
 
 static void fluid_set_char(uint8_t *out, const int8_t *pixels, int num_segs, uint8_t bits) {
@@ -177,17 +198,27 @@ static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now, bool
         fluid_set_char(out, digit_pixels[d], 7, fluid_digit_font[digit_value[d]]);
     }
 
+#if defined(FORCE_CLASSIC_LCD_TYPE)
+    const char *weekday = watch_utility_get_weekday(now); // "MO".."SU", classic only has 2 chars
+    fluid_set_char(out, fluid_weekday1_pixel, 8, fluid_weekday_char_bits(weekday[0]));
+    fluid_set_char(out, fluid_weekday2_pixel, 8, fluid_weekday_char_bits(weekday[1]));
+#else
     const char *weekday = watch_utility_get_long_weekday(now); // "MON".."SUN", always 3 chars
     fluid_set_char(out, fluid_weekday1_pixel, 8, fluid_weekday_char_bits(weekday[0]));
     fluid_set_char(out, fluid_weekday2_pixel, 8, fluid_weekday_char_bits(weekday[1]));
     fluid_set_char(out, fluid_weekday3_pixel, 8, fluid_weekday_char_bits(weekday[2]));
+#endif
 
     out[FLUID_COLON_PIXEL] = 1;
     out[FLUID_PM_PIXEL] = is_pm ? 1 : 0;
     out[FLUID_24H_PIXEL] = is_12h ? 0 : 1;
     out[FLUID_SIGNAL_PIXEL] = alarm_enabled ? 1 : 0;
     out[FLUID_BELL_PIXEL] = time_signal_enabled ? 1 : 0;
-    out[FLUID_ARROWS_PIXEL] = battery_low ? 1 : 0;
+#if !defined(FORCE_CLASSIC_LCD_TYPE)
+    out[FLUID_ARROWS_PIXEL] = battery_low ? 1 : 0; // no low-battery icon on the classic module
+#else
+    (void) battery_low;
+#endif
 }
 
 // Checks the battery voltage at most once a day, same cadence as clock_face. Just updates
