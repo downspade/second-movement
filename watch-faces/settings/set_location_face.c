@@ -353,7 +353,9 @@ static void _set_location_update_display(movement_event_t event, set_location_st
                     sprintf(buf, "%c %04d", state->working_latitude.sign ? '-' : '+', abs(_set_location_latlon_from_struct(state->working_latitude)));
                     // +2: buf's first 2 characters are the sign and a separator (space, or the
                     // longitude's hundreds digit), before the 4 digits active_digit indexes into.
-                    if (event.subsecond % 2) buf[state->active_digit + 2] = ' ';
+                    // active_digit==4 means the sign is being edited -- that's buf[0], not
+                    // buf[4+2]=buf[6] (past the 6 meaningful characters, into the null terminator).
+                    if (event.subsecond % 2) buf[state->active_digit == 4 ? 0 : state->active_digit + 2] = ' ';
                     watch_display_text(WATCH_POSITION_BOTTOM, buf);
                 }
             } else {
@@ -386,7 +388,9 @@ static void _set_location_update_display(movement_event_t event, set_location_st
                     sprintf(buf, "%c%05d", state->working_longitude.sign ? '-' : '+', abs(_set_location_latlon_from_struct(state->working_longitude)));
                     // +2: buf's first 2 characters are the sign and a separator (space, or the
                     // longitude's hundreds digit), before the 4 digits active_digit indexes into.
-                    if (event.subsecond % 2) buf[state->active_digit + 2] = ' ';
+                    // active_digit==4 means the sign is being edited -- that's buf[0], not
+                    // buf[4+2]=buf[6] (past the 6 meaningful characters, into the null terminator).
+                    if (event.subsecond % 2) buf[state->active_digit == 4 ? 0 : state->active_digit + 2] = ' ';
                     watch_display_text(WATCH_POSITION_BOTTOM, buf);
                 }
             }
