@@ -940,11 +940,10 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
     // TOP_LEFT has 3 character slots, but plain watch_display_text() only ever writes the
     // first 2 and never clears the 3rd -- use the _with_fallback variant (which does reach
     // it) and always supply a 3rd character so a stale digit from a previous screen can't
-    // linger there. Above 100% (a couple of total eclipses run over), use all 3 slots to
-    // show the real value; 100% and under fits in 2 digits, right-justified in the first
-    // 2 slots (ones digit in the 2nd), with the 3rd slot blanked.
-    if (e->magnitude_pct > 100) sprintf(buf, "%3d", e->magnitude_pct);
-    else sprintf(buf, "%2d ", e->magnitude_pct);
+    // linger there. Right-aligned, variable width: 1-2 digit percentages sit at the end
+    // (blank slot(s) leading), 3-digit ones (a couple of total eclipses run over 100%) fill
+    // all 3.
+    sprintf(buf, "%3d", e->magnitude_pct);
     // Classic only has the 2 slots (no position 10), not enough room for a 3-digit percentage
     // -- and unlike the moon age, there's no obvious rounding that keeps a percentage
     // meaningful in 2 digits either. So instead of a number, this shows the eclipse type as a
@@ -972,7 +971,7 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
     // sharing (verified against Custom_LCD_Display_Mapping), so only classic needs the leading
     // zero suppressed -- same fix as month/day's own "%2d" below, just conditional here since
     // custom can safely keep the zero-padded look this position used to have as SECONDS.
-    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) sprintf(buf, "%02d", local.unit.hour);
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) sprintf(buf, "%2d", local.unit.hour);
     else sprintf(buf, "%2d", local.unit.hour);
     watch_display_text(WATCH_POSITION_TOP_RIGHT, buf);
 
