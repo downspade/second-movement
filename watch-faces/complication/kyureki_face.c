@@ -32,22 +32,18 @@
 #include "kyureki_table_data.h"
 
 // 先勝,友引,先負,仏滅,大安,赤口, 5 characters each for WATCH_POSITION_TOP (custom LCD).
-// Uppercase 'I' renders incorrectly outside display position 0 on the custom LCD (see
-// Custom_LCD_Character_Set in watch_common_display.h), hence the lowercase 'i' in
-// TMBKi/TAiAN, matching the workaround used elsewhere (e.g. probability_face.c's "TAiLS").
-// 'M' and 'T' outside position 0 have a similar minor rendering quirk that the existing
-// codebase accepts as-is elsewhere (e.g. periodic_table_face.c's "Table"), so those are
-// left uppercase here too.
+// Uppercase 'I' renders incorrectly outside display position 0 on the custom LCD, hence the
+// lowercase 'i' in TMBKi/TAiAN (same workaround as probability_face.c's "TAiLS"). 'M'/'T'
+// outside position 0 have a similar minor quirk the codebase accepts as-is elsewhere (e.g.
+// "Table"), so those stay uppercase.
 static const char *rokuyo_names[6] = {
     "SENSY", "TOMBK", "SEMBU", "BTMTS", "TAIAN", "SHAKK",
 };
 
-// 先勝,友引,先負,仏滅,大安,赤口, 2 characters each at TOP_LEFT (positions 0/1) on classic.
-// Position 0 is fully independent (all 8 segments), but position 1 aliases 1B/1C and 1E/1F
-// to single addresses (see Classic_LCD_Display_Mapping), so a position-1 character only
-// renders correctly if its font byte's B==C and E==F. An earlier revision used 'S' as 先勝's
-// second character ("SS"), which doesn't satisfy that (B=0/C=1) -- replaced with 'E' here.
-// All 6 second characters (E/B/B/t/A/H) verified B==C and E==F at position 1.
+// 先勝,友引,先負,仏滅,大安,赤口, 2 characters each at TOP_LEFT on classic. Position 1
+// aliases 1B/1C and 1E/1F to single addresses (see Classic_LCD_Display_Mapping), so a
+// character there only renders correctly if its font byte's B==C and E==F -- verified for
+// all 6 second characters (E/B/B/t/A/H) here.
 static const char *rokuyo_names_classic[6] = {
     "SE", "TB", "SB", "Bt", "TA", "SH",
 };
@@ -153,31 +149,25 @@ static void _kyureki_face_update(kyureki_state_t *state) {
         return;
     }
 
-    // Month m's 1st day is at sequence position (m-1)%6 (month 1 and 7 both start the
-    // cycle at 先勝/index 0, month 2 and 8 at 友引/index 1, etc.), and day d of that month
-    // is (d-1) further along -- combined, (m-1)+(d-1) = m+d-2. Plain (m+d)%6 (no "-2") is
-    // off by a constant +2 for every date: e.g. lunar 7/19 (index 0 -> 先勝, confirmed
-    // against an independent lunar calendar reference) came out as (7+19)%6=2 -> 先負
-    // instead. month_number/day_of_month are always >=1, so m+d-2 never goes negative.
+    // Month m's 1st day is at sequence position (m-1)%6, and day d is (d-1) further along --
+    // combined, (m-1)+(d-1) = m+d-2. Plain (m+d)%6 (no "-2") is off by a constant +2 for every
+    // date (confirmed against an independent lunar calendar reference). month_number/
+    // day_of_month are always >=1, so m+d-2 never goes negative.
     uint8_t rokuyo_index = (state->month_number + state->day_of_month - 2) % 6;
     // watch_display_text_with_fallback()'s TOP case only reaches all 5 characters on custom;
     // its classic fallback path falls through to plain watch_display_text(), which only ever
-    // writes the *first 2* of whatever string it's given -- so passing rokuyo_names (the
-    // 5-char custom spelling) as its own fallback would silently show the wrong abbreviation
-    // on classic (e.g. 友引's "TOMBK" truncates to "TO", not the "TB" rokuyo_names_classic
-    // actually calls for). rokuyo_names_classic is the deliberately-chosen 2-character form
-    // instead (see its own comment for the position-1 aliasing it was checked against).
+    // writes the *first 2* -- so passing rokuyo_names (the 5-char custom spelling) as its own
+    // fallback would silently show the wrong abbreviation on classic (e.g. 友引's "TOMBK"
+    // truncates to "TO", not "TB"). rokuyo_names_classic is the deliberately-chosen 2-character
+    // form instead.
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
         watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)rokuyo_names[rokuyo_index], (char *)rokuyo_names[rokuyo_index]);
     } else {
         watch_display_text(WATCH_POSITION_TOP_LEFT, (char *)rokuyo_names_classic[rokuyo_index]);
-        // TOP_RIGHT is otherwise unused by this face on classic -- while browsing
-        // (offset_days != 0), it shows the *solar* (Gregorian) day-of-month of the date being
-        // browsed to, not the offset count itself -- same idea as custom's own SECONDS tail
-        // below; blanked again once back on today. Always 1-31, so the tens digit is only
-        // ever blank, 1, 2, or 3 -- never one of the 0/4/7 values position 2's A=D=G triple
-        // alias (see Classic_LCD_Display_Mapping) can't render correctly, unlike the raw
-        // offset count this replaced (which had no such bound).
+        // While browsing, shows the *solar* (Gregorian) day-of-month rather than the raw
+        // offset count: always 1-31, so the tens digit is only ever blank/1/2/3, avoiding the
+        // 0/4/7 values position 2's A=D=G triple alias (Classic_LCD_Display_Mapping) can't
+        // render correctly.
         char offset_buf[3];
         if (state->offset_days != 0) {
             snprintf(offset_buf, sizeof(offset_buf), "%2d", now.unit.day);
@@ -188,11 +178,9 @@ static void _kyureki_face_update(kyureki_state_t *state) {
     }
 
     // "month.day", decimal point lit between them. Last 2 chars (SECONDS) are normally "Ud"
-    // for a leap month, blank otherwise -- but on custom, while browsing (offset_days != 0),
-    // they show the *solar* (Gregorian) day-of-month of the date being browsed to instead
-    // (variable-width, e.g. " 6"/"31"), so the wearer can see what calendar date the browsed
-    // lunar date actually falls on. This is custom-only (classic's own TOP_RIGHT carries the
-    // same thing -- see above).
+    // for a leap month, blank otherwise -- but on custom, while browsing, they show the solar
+    // day-of-month instead, so the wearer can see what calendar date the browsed lunar date
+    // falls on (classic's TOP_RIGHT carries the same thing, see above).
     char buf[7];
     char tail[3];
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM && state->offset_days != 0) {

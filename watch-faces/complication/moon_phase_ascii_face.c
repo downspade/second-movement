@@ -40,33 +40,21 @@
 #define LUNAR_DAYS 29.53058770576
 #define NUM_PHASES 10
 
-// Meeus degrees-to-radians conversion, same literal PI sunriset.c (already linked into this
-// face for twilight/eclipse-visibility math) uses -- not relying on math.h's M_PI, which
-// isn't guaranteed by plain C11.
+// Not math.h's M_PI (not guaranteed by plain C11) -- same literal sunriset.c uses.
 #define MOON_DEGRAD (3.1415926535897932384 / 180.0)
 
-// 12 breakpoints for the 11 phase_index windows (0..10) below. Identical to the original
-// 9-window breakpoints except the waxing- and waning-crescent windows ([1, 6.38...] and
-// [23.14..., 28.53...]) each give up their outermost 1-day sliver to a new adjacent sliver
-// window ([1,2] and [27.53...,28.53...]) -- the quarter/full windows (already narrow, ~2
-// days centered on the exact moment) are untouched.
+// 12 breakpoints for the 11 phase_index windows (0..10) below -- the crescent windows each
+// give up their outermost 1-day sliver to a new adjacent sliver window; the (already narrow)
+// quarter/full windows are untouched.
 static const float phase_changes[] = {0, 1, 2, 6.38264692644, 8.38264692644, 13.76529385288, 15.76529385288, 21.14794077932, 23.14794077932, 27.53058770576, 28.53058770576, 29.53058770576};
 
-// ASCII-art moon phase bars: 4 cells drawn across WATCH_POSITION_HOURS +
-// WATCH_POSITION_MINUTES (raw positions 4-7). '[' is a moon's leading
-// (rounded) edge, ']' its trailing edge, '=' a fully-lit cell in between
-// (see _display_bar_segment: no character in the font combines exactly the
-// top+bottom segments this needs), '|' a hair-thin sliver -- just the near
-// vertical edge of the outermost cell, thinner than '['/']' since it has no
-// top/bottom cap (see _draw_phase_bar: the font's own '|' draws both
-// verticals, so this needs raw segments too) -- and space is dark. Written
-// here waxing-from-the-left (cell count = phase_index, 0..5; full is all
-// four cells; waning empties back out from the left, leaving the lit
-// remainder anchored to the right, cell count = 10 - phase_index) -- see
-// _update, which mirrors this to waxing-from-the-right for the (northern-
-// hemisphere) default case. Indices 0 and 10 are both "new" (the actual
-// instant of new moon isn't otherwise a displayed state); every other index
-// is a distinct phase, giving 10 displayed states total per cycle.
+// ASCII-art moon phase bars: 4 cells drawn across WATCH_POSITION_HOURS + WATCH_POSITION_MINUTES
+// (raw positions 4-7). '=' and '|' are drawn via raw segments in _draw_phase_bar rather than
+// the font: no character combines exactly the top+bottom segments '=' needs, and the font's
+// own '|' draws both verticals instead of just one edge. Written waxing-from-the-left; _update
+// mirrors this to waxing-from-the-right for the (northern-hemisphere) default case. Indices 0
+// and 10 are both "new" (the instant of new moon isn't itself a displayed state), giving 10
+// distinct phases per cycle.
 static const char *const ascii_art_moon[NUM_PHASES + 1] = {
     "    ", // 0: new
     "|   ", // 1: sliver, just waxing
@@ -92,29 +80,20 @@ static bool _read_location(moon_phase_ascii_state_t *state) {
     return have_location;
 }
 
-// Lunar eclipse dates and the UTC time of greatest eclipse, covering the full 150 years this
-// was meant to grow to: 2020-2170. magnitude_pct is x100, rounded: the umbral magnitude for
-// partial/total eclipses, the penumbral magnitude for penumbral eclipses (these are two
-// different, independently-computed numbers -- the umbral magnitude of a penumbral eclipse is
-// always negative, since the moon never reaches the umbra, so it can't just be reused). Source:
-// NASA GSFC's Five Millennium Canon of Lunar Eclipses (eclipse.gsfc.nasa.gov/LEcat5/
-// LE2001-2100.html for 2001-2100, LE2101-2200.html for 2101-2170) for dates and magnitudes,
-// cross-checked throughout against Wikipedia/EclipseWise (agreement within ~0.002 magnitude and
-// under a minute of time in every spot check). The 223 partial/total rows were fetched a batch
-// of table rows at a time; the 129 penumbral rows' magnitudes were fetched one eclipse at a time
-// from their individual EclipseWise pages instead, after a batched fetch attempt for those
-// produced values that didn't hold up under cross-checking (conflating penumbral eclipses with
-// nearby partial ones, and in a couple of cases returning magnitudes over 1.9, outside what's
-// physically possible) -- individual per-eclipse fetches were slower but didn't have that
-// problem. Written down rather than computed on-device: predicting eclipses requires modeling
-// the Moon's ~18.6-year nodal precession against its phase, which is a much harder problem than
+// Lunar eclipse dates and UTC time of greatest eclipse, 2020-2170. magnitude_pct is x100,
+// rounded: the umbral magnitude for partial/total eclipses, the penumbral magnitude for
+// penumbral eclipses -- two independently-computed numbers (a penumbral eclipse's umbral
+// magnitude is always negative, since the moon never reaches the umbra, so it can't be
+// reused). Source: NASA GSFC's Five Millennium Canon of Lunar Eclipses, cross-checked against
+// Wikipedia/EclipseWise. Written down rather than computed on-device: predicting eclipses
+// requires modeling the Moon's ~18.6-year nodal precession against its phase, much harder than
 // the plain synodic-month approximation the rest of this file uses for phase, and -- per this
-// project's usual policy (see wadokei_kyureki_notes.md's lunar calendar table) -- verified
-// external data beats an approximation that could silently drift.
+// project's usual policy (see wadokei_kyureki_notes.md) -- verified external data beats an
+// approximation that could silently drift.
 //
 // year is years since WATCH_RTC_REFERENCE_YEAR (2020), matching date_time.unit.year directly.
-// Hour/minute have seconds truncated (not rounded) from the source, which is plenty of
-// precision for a display that only ever shows the hour.
+// Hour/minute are UTC, truncated (not rounded) from the source -- plenty precise for a display
+// that only ever shows the hour.
 typedef struct {
     uint8_t year;
     uint8_t month;
@@ -481,13 +460,9 @@ static const lunar_eclipse_t lunar_eclipses[] = {
 };
 #define NUM_LUNAR_ECLIPSES (sizeof(lunar_eclipses) / sizeof(lunar_eclipse_t))
 
-// The eclipse bar blink window: starts this many seconds before the table's recorded moment of
-// greatest eclipse (approximating the eclipse's actual start, since the table has no
-// first-contact time -- see lunar_eclipse_t's comment) and ends this many seconds after it
-// (approximating its end). 22h/2h rather than a symmetric split: greatest eclipse tends to fall
-// nearer the end of the visible event than its middle, so the requested "starts 24h before the
-// eclipse begins, blinks until it ends" is closer to [-22h, +2h] around the tabulated moment
-// than to [-24h, 0].
+// Eclipse bar blink window around the tabulated moment of greatest eclipse (the table has no
+// first-contact time). Asymmetric (22h/2h, not a symmetric 24h/0h split): greatest eclipse
+// tends to fall nearer the end of the visible event than its middle.
 #define ECLIPSE_BLINK_BEFORE_SECONDS (22 * 3600)
 #define ECLIPSE_BLINK_AFTER_SECONDS (2 * 3600)
 
@@ -495,12 +470,10 @@ static const lunar_eclipse_t lunar_eclipses[] = {
 // (absolute UTC unix time, e.g. _update's `now`), or -1 if none does.
 static int _find_eclipse_window(uint32_t now_unix) {
     for (size_t i = 0; i < NUM_LUNAR_ECLIPSES; i++) {
-        // watch_date_time_t's year field is only 6 bits (0-63, i.e. 2020-2083 -- see
-        // rtc_date_time_t in rtc32.h), but this table runs to year 150 (2170). An entry past
-        // 63 would silently truncate into that range below (e.g. year 70 becomes 70 & 0x3F =
-        // 6, aliasing 2090 as 2026) and could spuriously match some unrelated real time. The
-        // device's own clock can't represent a year past 2083 in the first place, so such an
-        // entry can never actually be "now" here -- skip it rather than risk that collision.
+        // watch_date_time_t's year field is only 6 bits (2020-2083, see rtc32.h); an entry
+        // past that would silently truncate and alias onto an unrelated real time (e.g. year
+        // 70 -> 70 & 0x3F = 6 -> 2026) -- skip it, since the device clock can never actually
+        // reach it as "now" anyway.
         if (lunar_eclipses[i].year > 63) continue;
         watch_date_time_t utc = {0};
         utc.unit.year = lunar_eclipses[i].year;
@@ -541,12 +514,11 @@ static bool _read_lat_lon(double *lat, double *lon) {
     return true;
 }
 
-// Returns whether an eclipse at `local` (already converted to local time, e.g. by
-// _update_calendar) falls at night at the saved location -- i.e. is actually visible
-// there. Eclipses only happen at full moon, and a full moon rises near sunset and sets near
-// sunrise, so "is it night" is essentially "is the moon up", without needing a separate
-// moon-position calculation. Returns false if no location is set, or if the sun doesn't
-// rise/set that day at all (polar day/night -- left as "not visible" rather than guessing).
+// Whether an eclipse at `local` (already local time) falls at night at the saved location --
+// i.e. is actually visible. Eclipses only happen at full moon, and a full moon rises near
+// sunset and sets near sunrise, so "is it night" stands in for "is the moon up" without a
+// separate moon-position calculation. Returns false with no location set, or polar day/night
+// (left as "not visible" rather than guessed).
 static bool _eclipse_visible_at_night(watch_date_time_t local, bool location_set) {
     if (!location_set) return false;
     double lat, lon;
@@ -559,23 +531,15 @@ static bool _eclipse_visible_at_night(watch_date_time_t local, bool location_set
     return (eclipse_hour < rise + hours_from_utc) || (eclipse_hour > set + hours_from_utc);
 }
 
-// Returns whether the Moon is above the horizon at `local` right now, at the saved location --
-// used to light the PM indicator on an ordinary (non-eclipse) day. There's no moonrise/set
-// routine in this codebase (sunriset.c, already linked in for the eclipse check above, only
-// handles the Sun), and a full one is out of scope for what only needs a rough yes/no here --
-// instead this reuses today's *solar* rise/set times and shifts them by the Moon's current
-// elongation from the Sun (expressed in hours, 24h = one full lunation of elongation): at new
-// moon (moon_age 0) Moon and Sun are in conjunction, so the Moon rises/sets right with the Sun
-// (elongation 0h); at full moon (moon_age ~= LUNAR_DAYS/2) they're in opposition, so the Moon
-// rises ~12h after sunrise, i.e. around sunset (elongation 12h, matching the full-moon-at-night
-// assumption _eclipse_visible_at_night makes above); at first quarter it trails by ~6h (rises
-// around local noon, sets around local midnight); at last quarter by ~18h (rises around local
-// midnight). This tracks the Moon's actual eastward drift against the Sun (the same drift
-// responsible for moonrise slipping ~50min later each day) much more closely than that fixed
-// "50min/day" rule of thumb would, since it's keyed to the exact fractional age _moon_age_days
-// already computed rather than assumed to advance at a constant rate. Returns false if no
-// location is set, or if the Sun doesn't rise/set that day at all (polar day/night -- left as
-// "not visible" rather than guessing, same as the eclipse check above).
+// Whether the Moon is above the horizon right now at the saved location -- lights the PM
+// indicator on an ordinary (non-eclipse) day. There's no moonrise/set routine in this codebase
+// (sunriset.c only handles the Sun), so this reuses today's solar rise/set times shifted by the
+// Moon's current elongation from the Sun, in hours (24h = one full lunation of elongation): new
+// moon = 0h shift (rises with the Sun), full moon = ~12h (opposition, matching the full-moon-
+// at-night assumption _eclipse_visible_at_night makes above), first/last quarter = ~6h/~18h.
+// Tracks the Moon's actual eastward drift far more closely than a fixed "50min/day" rule of
+// thumb would, since it's keyed to the exact fractional moon_age rather than a constant rate.
+// Returns false with no location set, or polar day/night (same as the eclipse check above).
 static bool _moon_visible_now(watch_date_time_t local, double moon_age, bool location_set) {
     if (!location_set) return false;
     double lat, lon;
@@ -585,10 +549,9 @@ static bool _moon_visible_now(watch_date_time_t local, double moon_age, bool loc
     if (result != 0) return false;
     double hours_from_utc = (double) movement_get_timezone_offset_for_date(local) / 3600.0;
     double lag = fmod(moon_age / LUNAR_DAYS * 24.0, 24.0);
-    // Both endpoints are shifted by the same lag, so the window's width (moonset - moonrise)
-    // is still today's solar day length -- but the shift can push either endpoint across a
-    // midnight boundary on its own, so each is folded back into [0, 24) independently before
-    // the straddles-midnight check below compares them.
+    // Both endpoints shift by the same lag (window width stays the solar day length), but the
+    // shift can push either one across midnight independently, so each is folded into [0, 24)
+    // before the straddles-midnight check below compares them.
     double moonrise = fmod(fmod(rise + hours_from_utc + lag, 24.0) + 24.0, 24.0);
     double moonset = fmod(fmod(set + hours_from_utc + lag, 24.0) + 24.0, 24.0);
     double now_hour = local.unit.hour + local.unit.minute / 60.0;
@@ -616,15 +579,13 @@ void moon_phase_ascii_face_activate(void *context) {
 #define SEG_E (1 << 4)
 #define SEG_F (1 << 5)
 
-// Lights exactly the given segments (and clears the rest) at a raw display position. Bypasses
-// the font -- needed for glyphs no character in Custom_LCD_Character_Set/Classic_LCD_Character_Set
-// matches exactly (e.g. the plain double-bar "=" look, which is just segments A+D; its actual
-// '=' character is the middle+bottom bars instead) -- via the same digit mapping
-// watch_display_character() itself uses. Works on both LCD types: positions 4-7 (the only ones
-// the phase bar ever passes here) have A/B/C/D/E/F all real, independently-addressable segments
-// on Classic_LCD_Display_Mapping too (A and D happen to share an address at two of the four
-// positions, but that only means "on" for one implies "on" for the other -- never a problem for
-// masks like SEG_A|SEG_D that already want them equal).
+// Lights exactly the given segments (clearing the rest) at a raw display position. Bypasses
+// the font -- needed for glyphs no character matches exactly (e.g. the plain double-bar "="
+// look, just segments A+D; the font's actual '=' character is middle+bottom instead). Safe on
+// both LCD types: positions 4-7 (the only ones the phase bar passes here) have A-F
+// independently addressable even on Classic (A and D share an address at two positions, but
+// that only means "on" for one implies "on" for the other -- never a problem for masks like
+// SEG_A|SEG_D that already want them equal).
 static void _display_segments(uint8_t position, uint8_t mask) {
     watch_lcd_type_t lcd_type = watch_get_lcd_type();
     const digit_mapping_t *mapping;
@@ -640,13 +601,11 @@ static void _display_segments(uint8_t position, uint8_t mask) {
     }
 }
 
-// Writes into out[4] a plain moon-phase-style shape (same glyphs as ascii_art_moon's waxing
-// entries) with `lit` of its 4 cells lit from the left -- e.g. lit=2 gives "[=  ", a plain
-// half moon. Used to represent the fraction of the moon NOT covered during an eclipse: `lit`
-// is magnitude_pct's complement scaled to 4 cells and rounded, so 50% magnitude gives lit=2,
-// 100%+ gives lit=0 (blank -- fully covered). Not mirrored for hemisphere: unlike moon phase
-// itself, an eclipse's shadow isn't a left/right-oriented sliver, so there's no "correct" side
-// for this to grow from; picking one consistently is enough.
+// Writes into out[4] a plain moon-phase-style shape with `lit` of its 4 cells lit from the
+// left -- represents the fraction of the moon NOT covered during an eclipse: `lit` is
+// magnitude_pct's complement scaled to 4 cells and rounded (50% -> lit=2, 100%+ -> lit=0). Not
+// mirrored for hemisphere: unlike moon phase itself, an eclipse's shadow has no "correct" side
+// to grow from, so picking one consistently is enough.
 static void _eclipse_coverage_cells(uint8_t magnitude_pct, char out[4]) {
     static const char *const by_count[5] = { "    ", "[   ", "[=  ", "[== ", "[==]" };
     int lit = (4 * (100 - (int) magnitude_pct) + 50) / 100;
@@ -655,12 +614,10 @@ static void _eclipse_coverage_cells(uint8_t magnitude_pct, char out[4]) {
     memcpy(out, by_count[lit], 4);
 }
 
-// Draws the 4-cell phase bar across WATCH_POSITION_HOURS + WATCH_POSITION_MINUTES (raw
-// positions 4-7). If state->eclipse_bar_magnitude > 0, the whole bar blinks every second (as
-// state->blink_on toggles) between the given `cells` (always "[==]" when this applies, since
-// eclipses only happen at full moon) and _eclipse_coverage_cells' shape for that magnitude;
-// otherwise `cells` is just shown steadily. Cheap enough to call every second from EVENT_TICK
-// without redoing the rest of _update().
+// Draws the 4-cell phase bar. If state->eclipse_bar_magnitude > 0, blinks every second between
+// `cells` (always "[==]" here, since eclipses only happen at full moon) and
+// _eclipse_coverage_cells' shape for that magnitude; otherwise `cells` is shown steadily. Cheap
+// enough to call every second from EVENT_TICK without redoing the rest of _update().
 static void _draw_phase_bar(moon_phase_ascii_state_t *state, const char cells[4]) {
     char coverage_cells[4];
     if (state->eclipse_bar_magnitude > 0 && !state->blink_on) {
@@ -672,10 +629,9 @@ static void _draw_phase_bar(moon_phase_ascii_state_t *state, const char cells[4]
         if (cells[i] == '=') {
             _display_segments(position, SEG_A | SEG_D);
         } else if (cells[i] == '|') {
-            // '|' only ever lands in the outermost cell (0 or 3, see ascii_art_moon) --
-            // light that cell's near vertical edge: left (E+F) at cell 0, right (B+C) at
-            // cell 3. The font's own '|' is overridden elsewhere as the "ll" ligature and
-            // would light both verticals regardless of position, so this needs raw segments.
+            // '|' only lands in the outermost cell (0 or 3) -- light its near vertical edge
+            // (E+F at cell 0, B+C at cell 3). The font's own '|' is overridden as the "ll"
+            // ligature and would light both verticals regardless of position.
             _display_segments(position, i == 0 ? (SEG_E | SEG_F) : (SEG_B | SEG_C));
         } else {
             watch_display_character(cells[i], position);
@@ -683,20 +639,15 @@ static void _draw_phase_bar(moon_phase_ascii_state_t *state, const char cells[4]
     }
 }
 
-// Meeus, "Astronomical Algorithms" 2nd ed., ch. 49 ("Phases of the Moon"): the Julian
-// Ephemeris Day of the new moon for lunation k (k=0 is 2000-01-06 ~18:15 UTC). The mean term
-// alone (first line) is exactly the old FIRST_MOON-epoch/constant-LUNAR_DAYS calculation this
-// replaces -- accurate only to the extent the moon's orbital speed actually were constant,
-// which it isn't (real synodic months range ~29.18-29.93 days as Earth-Moon distance varies
-// through the elliptical orbit), so that calculation could be off by over half a day at
-// essentially any point in time (verified against a proper ephemeris) purely from this
-// non-uniformity, not from any error accumulating with time since the epoch. The periodic
-// correction terms below (in the Sun's mean anomaly M, the Moon's mean anomaly M', the
-// Moon's argument of latitude F, and the longitude of its ascending node Omega) account for
-// that non-uniformity and bring this to within ~2 minutes of a full ephemeris across
-// 2000-2040 (checked against PyEphem) -- Meeus's own further "planetary argument" terms
-// (his A1..A14), worth at most a few seconds each, are omitted as unnecessary for a display
-// that only ever shows tenths of a day.
+// Meeus, "Astronomical Algorithms" 2nd ed., ch. 49: JDE of the new moon for lunation k (k=0 is
+// 2000-01-06 ~18:15 UTC). The mean term alone (first line) is exactly the old constant-
+// LUNAR_DAYS calculation this replaces -- accurate only if the Moon's orbital speed were
+// constant, which it isn't (real synodic months range ~29.18-29.93 days), so that calculation
+// could be off by over half a day at any given time. The periodic correction terms (in the
+// Sun's mean anomaly M, Moon's mean anomaly M', argument of latitude F, and ascending node
+// Omega) account for that non-uniformity, bringing this within ~2 minutes of a full ephemeris
+// (checked against PyEphem, 2000-2040). Meeus's further "planetary argument" terms are omitted
+// as unnecessary for a display that only shows tenths of a day.
 static double _moon_new_moon_jde(double k) {
     double T = k / 1236.85;
     double T2 = T * T, T3 = T2 * T, T4 = T3 * T;
@@ -738,11 +689,10 @@ static double _moon_new_moon_jde(double k) {
     return jde + correction;
 }
 
-// Age of the moon (days since the preceding new moon) at the given unix time, via the
-// above. k starts as a floor()'d estimate from the mean rate, which the periodic correction
-// can occasionally shift across a lunation boundary -- the two checks below correct that by
-// re-testing the adjacent lunation, so the result is always relative to the true preceding
-// new moon rather than an off-by-one-lunation neighbor.
+// Age of the moon (days since the preceding new moon). k starts as a floor()'d estimate from
+// the mean rate, which the periodic correction can shift across a lunation boundary -- the
+// checks below re-test the adjacent lunation so the result is always relative to the true
+// preceding new moon.
 static double _moon_age_days(uint32_t now_unix) {
     double jd = (double) now_unix / 86400.0 + 2440587.5;
     double k = floor((jd - 2451550.09766) / LUNAR_DAYS);
@@ -760,11 +710,9 @@ static double _moon_age_days(uint32_t now_unix) {
 static void _update(moon_phase_ascii_state_t *state) {
     char buf[6];
     bool southern = state->southern_hemisphere;
-    // watch_rtc_get_date_time()/watch_rtc_get_unix_time() are already UTC (see
-    // movement_get_utc_date_time(), which returns the former verbatim) -- converting through
+    // watch_rtc_get_unix_time() is already UTC -- converting through
     // watch_utility_date_time_to_unix_time() with a nonzero utc_offset would subtract the
-    // timezone offset a second time (it already isn't present to begin with), silently
-    // shifting `now` away from true UTC by that same amount every time this runs.
+    // timezone offset a second time, silently shifting `now` away from true UTC.
     uint32_t now = watch_rtc_get_unix_time() + state->offset;
     watch_date_time_t date_time = watch_utility_date_time_from_unix_time(now, movement_get_current_timezone_offset());
     double currentday = _moon_age_days(now);
@@ -774,39 +722,29 @@ static void _update(moon_phase_ascii_state_t *state) {
         if (currentday > phase_changes[phase_index] && currentday <= phase_changes[phase_index + 1]) break;
     }
 
-    // Top: moon age in days, with an actual decimal point -- "15.4" -- rather than the
-    // digits-only "154" TOP_LEFT was stuck with (positions 0/1/10 have no spare segment to
-    // borrow for a point). WATCH_POSITION_TOP gets custom LCD's full 5 characters; '%4.1f'
-    // right-aligns the (variable-width, no-leading-zero) integer part + '.' + one fractional
-    // digit into 4 of them, and the trailing space is the 5th. The '.' itself is just the
-    // font's own '.' glyph (a single low segment, same as '_') landing at position 10 (the
-    // TOP fallback mapping's 3rd character slot) -- not watch_set_decimal_if_available(),
-    // which is a single fixed pixel positioned for WATCH_POSITION_BOTTOM's own decimal use
-    // (see watch_display_float_with_best_effort), nowhere near TOP.
+    // Top: moon age in days with a decimal point -- "15.4" rather than digit-only "154"
+    // (positions 0/1/10 have no spare segment for a point). '%4.1f' right-aligns into 4 of
+    // custom's 5 TOP characters; the '.' lands at position 10 as the font's own '.' glyph, not
+    // watch_set_decimal_if_available() (that's a fixed pixel for WATCH_POSITION_BOTTOM's own
+    // decimal use, nowhere near TOP).
     snprintf(buf, sizeof(buf), "%4.1f ", currentday);
-    // Classic has no 3-character slot at all, not enough for a fractional day -- so unlike
-    // custom, this rounds to the nearest whole day instead of just truncating buf's tenths
-    // digit off (which would silently floor towards the wrong day half the time), and shows
-    // it at SECONDS (2 digits) rather than TOP_LEFT, which is otherwise unused by this face on
-    // classic -- TOP_RIGHT carries the day-of-month there instead (see the swap below).
+    // Classic has no 3-character slot for a fractional day, so this rounds to the nearest
+    // whole day (truncating the tenths digit would silently floor half the time) and shows it
+    // at SECONDS -- TOP_RIGHT carries day-of-month instead (see the swap below).
     char buf_classic[3];
     int rounded_days = (int)(currentday + 0.5);
     snprintf(buf_classic, sizeof(buf_classic), "%2d", rounded_days);
     // watch_display_text_with_fallback() can't target different positions for its two
-    // branches (the fallback string still goes through the *same* `location`), so custom vs.
-    // classic needs an explicit split here instead of relying on that fallback mechanism --
-    // and plain watch_display_text() only ever writes the first 2 of TOP's 5 characters (it
-    // falls through to the same case as TOP_LEFT), so custom specifically needs the
-    // _with_fallback variant's TOP case to reach all 5.
+    // branches, and plain watch_display_text() only writes TOP's first 2 characters -- so
+    // custom needs the _with_fallback variant's TOP case to reach all 5, split explicitly here.
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
         watch_display_text_with_fallback(WATCH_POSITION_TOP, buf, buf);
     } else {
         watch_display_text(WATCH_POSITION_SECONDS, buf_classic);
         // On custom, TOP's 5-char write above covers positions 0/1/10 -- the same ones
-        // _update_calendar()'s TOP_LEFT eclipse-type code (TO/PA/PE) uses -- so returning
-        // from calendar mode always overwrites it there. Classic's normal mode never
-        // otherwise touches TOP_LEFT, so without this it would leave calendar mode's last
-        // TO/PA/PE sitting on screen indefinitely after Alarm-long-press back out.
+        // _update_calendar()'s eclipse-type code uses at TOP_LEFT -- so this always overwrites
+        // it. Classic's normal mode never touches TOP_LEFT otherwise, so clear it explicitly
+        // or calendar mode's last TO/PA/PE would linger after Alarm-long-press back out.
         watch_display_text(WATCH_POSITION_TOP_LEFT, "  ");
     }
 
@@ -826,29 +764,25 @@ static void _update(moon_phase_ascii_state_t *state) {
             cells[i] = c;
         }
     }
-    // Eclipses only happen at full moon, so this only ever matters when phase_index == 4 --
-    // but it's harmless to always check (the table just won't match outside the blink window
-    // below). Unlike a solar eclipse, a lunar eclipse is a location-independent fact (the Moon
-    // passes through Earth's shadow at the same moment for every observer), so this doesn't
-    // need location_set -- only the calendar mode's "visible at night from here" indicator does.
-    // `now` is already absolute UTC unix time (see its own comment above), matching what
-    // _find_eclipse_window compares against, so no timezone conversion is needed here either.
+    // Eclipses only happen at full moon, so this only matters when phase_index == 4, but it's
+    // harmless to always check. Unlike a solar eclipse, a lunar eclipse is location-independent
+    // (same moment for every observer), so no location_set check is needed here -- only
+    // calendar mode's "visible from here" indicator needs it. `now` is already absolute UTC,
+    // matching what _find_eclipse_window compares against.
     int eclipse_index = _find_eclipse_window(now);
     bool penumbral = eclipse_index >= 0 && lunar_eclipses[eclipse_index].penumbral;
     uint8_t magnitude_pct = eclipse_index >= 0 ? lunar_eclipses[eclipse_index].magnitude_pct : 0;
     // A penumbral eclipse has no umbral magnitude to size a bar shape by, and a magnitude of
-    // exactly 0% (e.g. 2157-02-24's recorded partial eclipse) wouldn't produce a visibly
-    // different alternate shape anyway -- both instead blink just the colon, leaving the bar
-    // showing the ordinary (always-full, since eclipses only happen at full moon) moon steadily.
+    // exactly 0% wouldn't produce a visibly different shape anyway -- both just blink the
+    // colon instead, leaving the bar on the ordinary full moon.
     bool colon_only = eclipse_index >= 0 && (penumbral || magnitude_pct == 0);
     state->eclipse_bar_magnitude = (eclipse_index >= 0 && !colon_only) ? magnitude_pct : 0;
     state->blink_on = true; // always start a fresh blink window (or a fresh non-eclipse hour) fully lit
 
-    // The bar blink is driven by EVENT_TICK, one toggle per tick -- bump to 2 ticks/second so
-    // each shape shows for 0.5s (a 1s full cycle) instead of the default 1Hz's 1s/2s. Only
-    // while actually blinking something, since a faster tick costs more power; _update()
-    // re-evaluates this every hour (or on offset/activate), so it drops back to 1 on its own
-    // once the blink window has passed.
+    // Bar blink is driven by EVENT_TICK, one toggle per tick -- bump to 2 Hz so each shape
+    // shows for 0.5s instead of 1s. Only while actually blinking, since a faster tick costs
+    // more power; _update() re-evaluates this hourly (or on offset/activate) so it drops back
+    // to 1 once the blink window passes.
     movement_request_tick_frequency(state->eclipse_bar_magnitude > 0 ? 2 : 1);
 
     _draw_phase_bar(state, cells);
@@ -859,30 +793,22 @@ static void _update(moon_phase_ascii_state_t *state) {
     if (colon_only) watch_start_indicator_blink_if_possible(WATCH_INDICATOR_COLON, 250);
     else watch_clear_colon();
 
-    // The PM indicator (repurposed here -- this face never shows a 12-hour time, so it's free;
-    // "P.M." as in "Present Moon") lights up if the Moon is actually up right now at the saved
-    // location, which also respects state->offset since both date_time and currentday above
-    // already do. This is _moon_visible_now() even on an eclipse day -- deliberately NOT
-    // _eclipse_visible_at_night(eclipse_local, ...), which reflects only the eclipse's own
-    // fixed instant rather than the current time, and eclipses only happen at full moon, so
-    // the Moon is genuinely up for large stretches of an eclipse day regardless of whether
-    // that one instant fell at night; a "now" check that only agreed with reality once a day
-    // would make this indicator look broken on exactly the day it matters most. (Calendar
-    // mode's own indicator, in _update_calendar() below, is a different question -- "was this
-    // particular eclipse visible" -- so it still uses _eclipse_visible_at_night() correctly.)
-    // This runs (and so stays accurate) even while asleep, since EVENT_LOW_ENERGY_UPDATE keeps
-    // calling _update() at the top of each hour -- the sleep indicator itself is left alone
-    // here, free to mean what it usually does (see the EVENT_LOW_ENERGY_UPDATE handler below).
+    // The PM indicator (repurposed -- this face never shows a 12-hour time; "P.M." as in
+    // "Present Moon") lights up if the Moon is actually up right now, respecting state->offset.
+    // Deliberately _moon_visible_now(), not _eclipse_visible_at_night(): that reflects only the
+    // eclipse's fixed instant, and the Moon is up for large stretches of an eclipse day
+    // regardless of whether that one instant fell at night -- a "now" check that only agreed
+    // with reality once a day would look broken exactly when it matters most. (Calendar mode's
+    // own indicator below asks a different question -- "was this eclipse visible" -- so it
+    // still uses _eclipse_visible_at_night().) Runs even while asleep via
+    // EVENT_LOW_ENERGY_UPDATE's hourly _update() calls; the sleep indicator itself is untouched.
     bool visible = _moon_visible_now(date_time, currentday, state->location_set);
     if (visible) watch_set_indicator(WATCH_INDICATOR_PM);
     else watch_clear_indicator(WATCH_INDICATOR_PM);
 
-    // Day of the month: SECONDS on custom, swapped to TOP_RIGHT on classic (which puts the
-    // moon age at SECONDS instead -- see that assignment above for why). Only shown while
-    // actively browsing (state->offset != 0, see EVENT_ALARM/LIGHT_BUTTON_UP below) -- on
-    // today's date it'd just be repeating information already on the wearer's actual watch
-    // face, so it's left blank there instead, same idea as kyureki_face's own offset-day
-    // display.
+    // Day of month: SECONDS on custom, TOP_RIGHT on classic (moon age takes SECONDS there
+    // instead). Only shown while browsing (state->offset != 0) -- on today's date it'd just
+    // repeat what's already on the wearer's main watch face.
     if (state->offset != 0) {
         sprintf(buf, "%2d", date_time.unit.day);
     } else {
@@ -895,28 +821,17 @@ static void _update(moon_phase_ascii_state_t *state) {
     }
 }
 
-// Renders calendar mode: browsing lunar_eclipses[state->calendar_index] independent of
-// state->offset. Top-left shows the eclipse rate (magnitude_pct on custom; a couple of total
-// eclipses run over 100%, using all 3 of TOP_LEFT's slots for those -- see the comment at that
-// sprintf -- or a TO/PA/PE type code on classic, see the comment above that assignment);
-// top-right the peak hour; the hours/minutes positions the month and day, all local to the
-// wearer (the table stores UTC); seconds the last 2 digits of the year (see the comment at
-// that assignment for why year and hour swap their more obvious positions). The PM indicator
-// (repurposed as "Present Moon", see _update()'s own
-// indicator block for why) lights up if the eclipse's local moment falls at night at the saved
-// location -- since eclipses only happen at full moon, and a full moon rises near sunset and
-// sets near sunrise, "is it night" is essentially "is the moon up", without needing a separate
-// moon-position calculation.
+// Renders calendar mode (browsing lunar_eclipses[state->calendar_index], independent of
+// state->offset) -- see the .h file for the on-screen layout. TOP_LEFT's 3-digit case and the
+// TOP_RIGHT/SECONDS position swap are explained at their own assignments below.
 static void _update_calendar(moon_phase_ascii_state_t *state) {
     const lunar_eclipse_t *e = &lunar_eclipses[state->calendar_index];
     char buf[6];
 
-    // watch_date_time_t's year field is only 6 bits (2020-2083 -- see rtc_date_time_t in
-    // rtc32.h), but this table runs to year 150 (2170); an entry past 63 can't be converted to
-    // local time through it at all (same limitation as _find_eclipse_window, see its comment). Rather
-    // than let that silently alias into some unrelated, wrong year, fall back to the entry's
-    // raw UTC date/time for those -- up to a day off from the wearer's actual local calendar
-    // day, but never a wrong year.
+    // watch_date_time_t's year field is only 6 bits (2020-2083); an entry past 63 can't
+    // convert to local time at all (same limitation as _find_eclipse_window). Rather than let
+    // that silently alias to some unrelated year, fall back to the entry's raw UTC date/time --
+    // up to a day off from local, but never a wrong year.
     bool locally_convertible = e->year <= 63;
     watch_date_time_t local = {0};
     if (locally_convertible) {
@@ -937,40 +852,28 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
         local.unit.minute = e->minute;
     }
 
-    // TOP_LEFT has 3 character slots, but plain watch_display_text() only ever writes the
-    // first 2 and never clears the 3rd -- use the _with_fallback variant (which does reach
-    // it) and always supply a 3rd character so a stale digit from a previous screen can't
-    // linger there. Right-aligned, variable width: 1-2 digit percentages sit at the end
-    // (blank slot(s) leading), 3-digit ones (a couple of total eclipses run over 100%) fill
-    // all 3.
+    // TOP_LEFT has 3 slots, but plain watch_display_text() only writes the first 2 and never
+    // clears the 3rd -- use _with_fallback (which reaches it) and always supply a 3rd
+    // character so a stale digit can't linger. Right-aligned, variable width (a couple of
+    // total eclipses run over 100% and fill all 3 digits).
     sprintf(buf, "%3d", e->magnitude_pct);
-    // Classic only has the 2 slots (no position 10), not enough room for a 3-digit percentage
-    // -- and unlike the moon age, there's no obvious rounding that keeps a percentage
-    // meaningful in 2 digits either. So instead of a number, this shows the eclipse type as a
-    // 2-letter code: TO(tal), PA(rtial), or PE(numbral). Positions 0/1 render this cleanly --
-    // unlike digits (see the B/C and E/F address-sharing on position 1), none of T/O/P/A/E hit
-    // that aliasing, since every letter used here keeps its aliased segment-pairs in agreement.
+    // Classic only has 2 slots -- not enough for a 3-digit percentage, and there's no rounding
+    // that keeps a percentage meaningful in 2 digits -- so this shows the eclipse type instead
+    // (TO/PA/PE); unlike digits, none of T/O/P/A/E hit position 1's B/C and E/F aliasing.
     char buf_classic[3];
     if (e->penumbral) snprintf(buf_classic, sizeof(buf_classic), "PE");
     else if (e->magnitude_pct >= 100) snprintf(buf_classic, sizeof(buf_classic), "TO");
     else snprintf(buf_classic, sizeof(buf_classic), "PA");
     watch_display_text_with_fallback(WATCH_POSITION_TOP_LEFT, buf, buf_classic);
 
-    // TOP_RIGHT and SECONDS swap their usual roles here (peak hour up top, year down at
-    // SECONDS) rather than the more obvious year-at-TOP_RIGHT/hour-at-SECONDS pairing --
-    // classic's TOP_RIGHT (position 2) has no F segment, so a tens digit needing it (4/5/6/8/9)
-    // doesn't render fully. The peak hour's tens digit is always 0-2, avoiding that; the year's
-    // last-2-digits' tens digit ranges over the full 0-9 and would often need the missing F
-    // (e.g. any year ending 40-99 except the 70s). SECONDS has no such gap on either LCD type,
-    // so that's where the year belongs instead.
+    // TOP_RIGHT/SECONDS swap their usual roles (peak hour up top, year at SECONDS) because
+    // classic's TOP_RIGHT (position 2) has no F segment: the peak hour's tens digit is always
+    // 0-2 (safe), but the year's last-2-digits tens digit ranges 0-9 and would often need it.
     //
-    // Zero-padding still isn't safe even restricted to 0-2, though: 2A/2D/2G share one
-    // address (see Classic_LCD_Display_Mapping), and '0' is the one digit 0-2 whose font byte
-    // wants A on but G off -- G is written last, so it silently overrides A back off, leaving
-    // '0' displayed without its top-left stroke. Custom's position 2 has no such address
-    // sharing (verified against Custom_LCD_Display_Mapping), so only classic needs the leading
-    // zero suppressed -- same fix as month/day's own "%2d" below, just conditional here since
-    // custom can safely keep the zero-padded look this position used to have as SECONDS.
+    // Even restricted to 0-2, zero-padding isn't safe on classic: 2A/2D/2G share an address,
+    // and '0' is the one digit here whose font byte wants A on but G off -- G is written last
+    // and silently overrides A, dropping '0's top-left stroke. Custom's position 2 has no such
+    // aliasing, so only classic needs the leading zero suppressed.
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) sprintf(buf, "%2d", local.unit.hour);
     else sprintf(buf, "%2d", local.unit.hour);
     watch_display_text(WATCH_POSITION_TOP_RIGHT, buf);
@@ -986,9 +889,8 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
     // Marks the month/day as a date (not a HH:MM time) with a "." in place of the colon.
     watch_set_decimal_if_available();
 
-    // Visibility isn't meaningfully computable without a real local year either (sun_rise_set
-    // would get the same wrong year local.unit.year would carry) -- treat those entries as
-    // not visible rather than guess, same as the polar day/night case inside the helper.
+    // Visibility isn't meaningfully computable without a real local year (sun_rise_set would
+    // use the same wrong year) -- treat those entries as not visible rather than guess.
     if (locally_convertible && _eclipse_visible_at_night(local, state->location_set)) watch_set_indicator(WATCH_INDICATOR_PM);
     else watch_clear_indicator(WATCH_INDICATOR_PM);
 }
@@ -1012,38 +914,33 @@ bool moon_phase_ascii_face_loop(movement_event_t event, void *context) {
                 // only update everything once an hour...
                 _update(state);
             } else if (state->eclipse_bar_magnitude > 0) {
-                // ...but keep blinking the eclipse bar every second in between. Eclipses only
-                // happen at full moon, which is left-right symmetric, so the un-mirrored,
-                // un-blinked "[==]" is correct for both hemispheres here.
+                // Keep blinking the eclipse bar every second in between. Eclipses only happen
+                // at full moon (left-right symmetric), so the un-mirrored "[==]" is correct
+                // for both hemispheres.
                 static const char full_moon_cells[4] = {'[', '=', '=', ']'};
                 state->blink_on = !state->blink_on;
                 _draw_phase_bar(state, full_moon_cells);
             }
             break;
         case EVENT_LOW_ENERGY_UPDATE: {
-            // Entering low energy mode always drops out of calendar mode and back to today's
-            // moon phase -- simpler than teaching calendar mode its own sleep-mode rendering,
-            // and calendar browsing isn't something you'd want to leave running unattended.
+            // Entering low energy mode always drops calendar mode back to today's moon phase
+            // -- simpler than a separate sleep-mode rendering, and browsing isn't something
+            // you'd leave running unattended.
             bool left_calendar_mode = state->calendar_mode;
             if (state->calendar_mode) {
                 state->calendar_mode = false;
                 watch_clear_decimal_if_available();
             }
-            // update at the top of the hour, or if we're entering sleep mode with an offset,
-            // or if we just left calendar mode -- that last one matters even with no other
-            // reason to update, since _update() is what sets/clears the PM indicator for
-            // today's actual Moon/eclipse visibility; without it, the indicator would be left
-            // however calendar mode last drew it instead. Also, in sleep mode, always show
-            // the current moon phase (offset = 0).
+            // Update at the top of the hour, on an offset, or just after leaving calendar mode
+            // (that matters even with no other reason, since _update() is what sets the PM
+            // indicator for today's actual Moon/eclipse visibility -- otherwise it'd be left
+            // however calendar mode last drew it).
             if (left_calendar_mode || state->offset || (watch_rtc_get_date_time().unit.minute == 0)) {
                 state->offset = 0;
                 _update(state);
             }
-            // and kill the offset so when the wearer wakes up, it matches what's on screen.
+            // Kill the offset so the wearer wakes up to what's on screen.
             state->offset = 0;
-            // The sleep indicator is unclaimed here (the Moon-visibility indicator above lives
-            // on WATCH_INDICATOR_PM instead, see _update()'s indicator block), so this can just
-            // use it for its usual meaning.
             if (!watch_sleep_animation_is_running()) watch_start_sleep_animation(1000);
             break;
         }
@@ -1053,17 +950,14 @@ bool moon_phase_ascii_face_loop(movement_event_t event, void *context) {
                 if (state->calendar_index < NUM_LUNAR_ECLIPSES - 1) state->calendar_index++;
                 _update_calendar(state);
             } else {
-                // Pressing the alarm adds an offset of one day to the displayed value,
-                // so you can see moon phases in the future.
                 state->offset += 86400;
                 _update(state);
             }
             break;
         case EVENT_ALARM_LONG_PRESS:
             if (state->calendar_mode) {
-                // back to today's moon phase -- _update() below sets/clears the PM
-                // indicator itself based on today's actual Moon/eclipse visibility, so no
-                // need to clear it separately here first.
+                // _update() below sets/clears the PM indicator itself, so no need to clear it
+                // separately here first.
                 state->calendar_mode = false;
                 watch_clear_decimal_if_available();
                 state->offset = 0;

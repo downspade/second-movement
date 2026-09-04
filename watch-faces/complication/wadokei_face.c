@@ -56,24 +56,16 @@ static const char *quarter_names[4] = {
     "Hitotu", "Futatu", "Mittu ", "Yottu ",
 };
 
-// Classic-LCD branch names for mode 1: 4 characters each, occupying HOURS+MINUTES (the
-// left 4 of WATCH_POSITION_BOTTOM's 6) -- written via a single BOTTOM call so unused
-// trailing positions are simply never touched, same as the koku prefix's own 5/3-char
-// strings below. TOP isn't used at all on classic in this mode (see the mode==1 branch).
+// Classic-LCD branch names for mode 1: 4 characters each, occupying HOURS+MINUTES. TOP isn't
+// used at all on classic in this mode.
 //
-// These are plain full spellings (T/M/R/I included) written as if none of the classic-only
-// positions-4-9 pitfalls applied -- and none of them actually need to be worked around by
-// hand, because watch_display_character() already does it: for classic, positions 4/6
-// silently substitute a same-looking-but-safe character for several letters whose font byte
-// needs the nonexistent H segment or would hit 4/6's A=D address sharing (t/T->+, U/V/W->u,
-// A->a, N/M/m->n, 7->&, L->!, J->j, o->O, c->C -- see watch_common_display.c's
-// watch_display_character(), the "special cases for positions 4 and 6" block), and I->l
-// applies at every position but 0. E.g. 辰's "tAtU" actually draws "+A+U" (both t's become
-// the plus sign, segments E/F/G, at positions 4 and 6); 未's "HtJI" draws "Ht" + j (not J) +
-// l (not I). Confirmed clean by walking every character through that exact substitution
-// logic against the real Classic_LCD_Character_Set bit patterns, not by eye -- this fooled
-// an earlier revision of this comment into rewriting several of these with manual lowercase
-// substitutes and dropped/shifted letters, unaware the display driver already handled it.
+// Written as plain full spellings (T/M/R/I included) despite classic's positions-4-9 pitfalls,
+// because watch_display_character() already substitutes a safe character for each affected
+// letter (t/T->+, U/V/W->u, A->a, N/M/m->n, 7->&, L->!, J->j, o->O, c->C, and I->l at every
+// position but 0 -- see its "special cases for positions 4 and 6" block). E.g. 辰's "tAtU"
+// actually draws "+A+U". Confirmed by walking every character through that substitution logic
+// against the real font bit patterns, not by eye -- an earlier revision of this comment got
+// this wrong by hand-substituting letters the driver already handled.
 static const char *branch_names_classic[12] = {
     " NE ", " USI", "torA", " U  ", "tAtU", "n&1 ",
     "Un&A", "HtJI", "SArU", "torI", "1NU ", "  I ",
@@ -94,14 +86,9 @@ static const char *koku_prefix[12] = {
     "HIRU ", "HIRU ", "HIRU ", "KURE ", "YORU ", "YORU ",
 };
 
-// Classic-LCD prefixes for mode 0, 2 characters at TOP_LEFT (positions 0/1). Unlike the
-// BOTTOM/HOURS/MINUTES/SECONDS group (positions 4-9), position 0 is fully independent (all
-// 8 segments, no aliasing) but position 1 aliases 1B/1C and 1E/1F to single addresses (see
-// Classic_LCD_Display_Mapping) -- so a position-1 character only renders correctly if its
-// font byte's B==C and E==F. An earlier revision used 'k'/'S'/'r' as the second character for
-// 6 of these 12 (AKE/ASA/ASA/KURE/YORU/YORU), none of which satisfy that -- replaced here
-// with 'E'/'A'/'A'/'U'/'O'/'O' instead, all verified B==C and E==F at position 1. All 12
-// entries now render correctly.
+// Classic-LCD prefixes for mode 0, 2 characters at TOP_LEFT. Position 1 aliases 1B/1C and
+// 1E/1F to single addresses (see Classic_LCD_Display_Mapping), so a character there only
+// renders correctly if its font byte's B==C and E==F -- verified for all 12 entries here.
 static const char *koku_prefix_classic[12] = {
     "At", "At", "At", "AE", "AA", "AA",
     "H1", "H1", "H1", "KU", "YO", "YO",
@@ -169,7 +156,7 @@ static bool _wadokei_twilight_bounds_unix(watch_date_time_t day, movement_locati
 
 // Determines which branch span (a day-side or night-side twilight-to-twilight range)
 // `now` falls into, and caches it in state. May need yesterday's or tomorrow's twilight
-// bounds when `now` falls outside today's daytime span (see plan: 3 cases + failure).
+// bounds when `now` falls outside today's daytime span.
 static void _wadokei_compute_span(wadokei_state_t *state, movement_location_t location,
                                    uint32_t now_unix, watch_date_time_t today) {
     uint32_t today_dawn, today_dusk;
@@ -246,14 +233,10 @@ static void _wadokei_face_update(wadokei_state_t *state) {
             watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)branch_names[branch_index], (char *)branch_names[branch_index]);
             watch_display_text(WATCH_POSITION_BOTTOM, (char *)quarter_names[quarter_index]);
         } else {
-            // Classic has no TOP row here at all -- everything lives in BOTTOM's 6
-            // characters: the branch name in the first 4 (HOURS+MINUTES), the quarter
-            // marker in the last 2 (SECONDS). See branch_names_classic's own comment for
-            // why these strings look the way they do.
-            //
-            // Mode 0's classic branch (below) writes a 2-character prefix to TOP_LEFT; this
-            // mode never touches it, so without an explicit blank here, switching from mode 0
-            // to mode 1 would leave that prefix sitting on screen indefinitely.
+            // Classic has no TOP row here -- everything lives in BOTTOM's 6 characters
+            // instead. Mode 0's classic branch (below) writes a prefix to TOP_LEFT; this mode
+            // never touches it, so blank it explicitly or a mode-0-to-1 switch would leave
+            // that prefix on screen indefinitely.
             watch_display_text(WATCH_POSITION_TOP_LEFT, "  ");
             watch_display_text(WATCH_POSITION_BOTTOM, (char *)branch_names_classic[branch_index]);
             watch_display_text(WATCH_POSITION_SECONDS, (char *)quarter_names_classic[quarter_index]);
@@ -271,13 +254,10 @@ static void _wadokei_face_update(wadokei_state_t *state) {
         watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)prefix, (char *)prefix);
         watch_display_text(WATCH_POSITION_BOTTOM, buf);
     } else {
-        // Classic: prefix goes in TOP_LEFT (2 characters, positions 0/1 -- see
-        // koku_prefix_classic's own comment for the position-1 aliasing this runs into for
-        // some entries). BOTTOM gets a leading blank (position 4, otherwise unused here) then
-        // the digit at position 5 (no aliasing there, so any digit 4-9 is safe) then either
-        // "han " or 4 blanks filling positions 6-9 -- "han"'s h/a land on 6/7, both clear of
-        // both classic pitfalls (no H-segment needed, and h/a's A and D bits agree, so the
-        // 6/4-alias that broke things elsewhere in this face doesn't apply to them).
+        // Classic: prefix in TOP_LEFT (see koku_prefix_classic's own comment on its position-1
+        // aliasing). BOTTOM gets a leading blank, then the digit (position 5, no aliasing, so
+        // any digit 4-9 is safe), then "han " or 4 blanks -- "han"'s h/a land on positions 6/7,
+        // both clear of the pitfalls that affect other letters there.
         watch_display_text(WATCH_POSITION_TOP_LEFT, (char *)koku_prefix_classic[branch_index]);
         snprintf(buf, sizeof(buf), half ? " %dhan " : " %d    ", digit);
         watch_display_text(WATCH_POSITION_BOTTOM, buf);
