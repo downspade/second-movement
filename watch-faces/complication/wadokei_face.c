@@ -46,8 +46,8 @@
 // "TAiLS", blackjack_face.c's "WlN"/"TlE"). 'M' outside position 0 has a similar minor
 // quirk that the existing codebase accepts as-is (e.g. "Table"), so UMA is left uppercase.
 static const char *branch_names[12] = {
-    "NE   ", "USHI ", "TORA ", "U    ", "TATSU", "MI   ",
-    "UMA  ", "HITJ1", "SARU ", "TOR1 ", "INU  ", "I    ",
+    "NE   ", "USHl ", "TORA ", "U    ", "TATSU", "MI   ",
+    "UMA  ", "HITJl", "SARU ", "TORl ", "INU  ", "I    ",
 };
 
 // One quarter name per position, spelled out in full (一つ/二つ/三つ/四つ), 6 characters
@@ -82,7 +82,7 @@ static const char *quarter_names_classic[4] = {
 // use the plain name; quarters 3-4 (三つ/四つ) append "HAN" (半).
 // "Hi" (昼) would collide with position-0-only 'I' outside position 0, so it's "HiR".
 static const char *koku_prefix[12] = {
-    "AKTKi", "AKTKi", "AKTKi", "AKE  ", "ASA  ", "ASA  ",
+    "AKTKl", "AKTKl", "AKTKl", "AKE  ", "ASA  ", "ASA  ",
     "HIRU ", "HIRU ", "HIRU ", "KURE ", "YORU ", "YORU ",
 };
 
