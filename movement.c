@@ -1096,10 +1096,83 @@ void app_setup(void) {
         int32_t time_zone_offset = EM_ASM_INT({
             return -new Date().getTimezoneOffset();
         });
+        int8_t matched_zone = -1;
         for (int i = 0; i < NUM_ZONE_NAMES; i++) {
             if (movement_get_current_timezone_offset_for_zone(i) == time_zone_offset * 60) {
                 movement_state.settings.bit.time_zone = i;
+                matched_zone = i;
                 break;
+            }
+        }
+
+        // Seed location.u32 from the matched zone's representative city, but only if no
+        // location has been set yet -- reg == 0 doubles as movement's "unset" sentinel (see
+        // set_location_face.c and solar_time_face.c), so this never clobbers a location the
+        // wearer already set by hand or via solar_time_face's own browser-geolocation seeding.
+        // This lets faces that read location.u32 (sunrise_sunset_face, moon_phase_face,
+        // wadokei_face, ...) show something reasonable even when embedded alone, without
+        // requiring set_location_face to be built in.
+        if (matched_zone >= 0) {
+            movement_location_t existing_location = {0};
+            filesystem_read_file("location.u32", (char *) &existing_location.reg, sizeof(existing_location.reg));
+            if (existing_location.reg == 0) {
+                // One representative city per utz/zones.h zone (same UTZ_* order), in
+                // hundredths of a degree -- same encoding as movement_location_t. UTC (index
+                // 15) uses London's coordinates rather than literal (0, 0): a real (0, 0)
+                // reading would be indistinguishable from "unset" under the reg == 0 sentinel
+                // above.
+                static const struct { int16_t lat; int16_t lon; } zone_locations[NUM_ZONE_NAMES] = {
+                    {-1428, -17070}, // UTZ_PAGO_PAGO
+                    { 2131, -15786}, // UTZ_HONOLULU
+                    { 6122, -14990}, // UTZ_ANCHORAGE
+                    { 3405, -11824}, // UTZ_LOS_ANGELES
+                    { 3974, -10499}, // UTZ_DENVER
+                    { 3345, -11207}, // UTZ_PHOENIX
+                    { 4188,  -8763}, // UTZ_CHICAGO
+                    { 5045, -10462}, // UTZ_REGINA
+                    { 4071,  -7401}, // UTZ_NEW_YORK
+                    { 4465,  -6357}, // UTZ_HALIFAX
+                    { -310,  -6002}, // UTZ_MANAUS
+                    {-3345,  -7065}, // UTZ_SANTIAGO
+                    {-2355,  -4663}, // UTZ_SAO_PAULO
+                    { 4756,  -5271}, // UTZ_ST_JOHNS
+                    { 6417,  -5171}, // UTZ_NUUK
+                    { 5151,    -13}, // UTZ_UTC (London's coordinates -- see comment above)
+                    { 5151,    -13}, // UTZ_LONDON
+                    {  652,    338}, // UTZ_LAGOS
+                    { 5252,   1340}, // UTZ_BERLIN
+                    { 3004,   3124}, // UTZ_CAIRO
+                    {-2597,   3258}, // UTZ_MAPUTO
+                    { 3177,   3521}, // UTZ_JERUSALEM
+                    { 6017,   2494}, // UTZ_HELSINKI
+                    { -129,   3682}, // UTZ_NAIROBI
+                    { 2471,   4668}, // UTZ_RIYADH
+                    { 5576,   3762}, // UTZ_MOSCOW
+                    { 3569,   5139}, // UTZ_TEHRAN
+                    { 2520,   5527}, // UTZ_DUBAI
+                    { 2257,   8836}, // UTZ_KOLKATA
+                    { 2772,   8532}, // UTZ_KATHMANDU
+                    { 1687,   9620}, // UTZ_YANGON
+                    { 1376,  10050}, // UTZ_BANGKOK
+                    { 3123,  12147}, // UTZ_SHANGHAI
+                    { 2232,  11417}, // UTZ_HONG_KONG
+                    {  135,  10382}, // UTZ_SINGAPORE
+                    {-3195,  11586}, // UTZ_PERTH
+                    { 3568,  13965}, // UTZ_TOKYO
+                    { 3757,  12698}, // UTZ_SEOUL
+                    {-1246,  13084}, // UTZ_DARWIN
+                    {-3493,  13860}, // UTZ_ADELAIDE
+                    {-2747,  15302}, // UTZ_BRISBANE
+                    {-4288,  14733}, // UTZ_HOBART
+                    {-3387,  15121}, // UTZ_SYDNEY
+                    { 1347,  14475}, // UTZ_GUAM
+                    {  145,  17297}, // UTZ_TARAWA
+                    {-3685,  17476}, // UTZ_AUCKLAND
+                };
+                movement_location_t browser_tz_location = {0};
+                browser_tz_location.bit.latitude = zone_locations[matched_zone].lat;
+                browser_tz_location.bit.longitude = zone_locations[matched_zone].lon;
+                filesystem_write_file("location.u32", (char *) &browser_tz_location.reg, sizeof(browser_tz_location.reg));
             }
         }
 #endif

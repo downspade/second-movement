@@ -26,7 +26,7 @@
 #define MOON_PHASE_ASCII_FACE_H_
 
 /*
- * MOON PHASE ASCII face (custom LCD only)
+ * MOON PHASE ASCII face
  *
  * Renamed and simplified from moon_phase_face: that face's text-label
  * display mode (a "1stQtr"/"FULL"/etc string plus a classic-LCD pixel
