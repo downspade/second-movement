@@ -2,6 +2,7 @@
  * MIT License
  *
  * Copyright (c) 2022 Joey Castillo
+ * Copyright (c) 2026 Downspade
  *
  * Based on Phase of Moon App for Tidbyt
  * https://github.com/tidbyt/community/blob/main/apps/phaseofmoon/phase_of_moon.star

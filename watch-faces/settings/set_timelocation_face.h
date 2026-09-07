@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2026
+ * Copyright (c) 2026 Downspade
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,7 @@
 #define SET_TIMELOCATION_FACE_H_
 
 /*
- * SET TIME+LOCATION face (custom LCD only)
+ * SET TIME+LOCATION face
  *
  * A single guided setup flow covering everything set_time_face and set_location_face cover
  * between them -- date, timezone, location, and time of day -- in one pass. This is a
@@ -34,6 +34,10 @@
  * its own copy of the date/time and city/lat-lon logic those faces use, so this face can be
  * dropped into another project as this .c/.h pair alone, with no dependency on either of them
  * being present.
+ *
+ * Both display types are supported: the top-row labels have two-character
+ * fallbacks on classic, and the lat/lon editor there uses the same shape
+ * sunrise_sunset_face's own classic branch uses.
  *
  * Nine pages, advanced with Light (short press):
  *

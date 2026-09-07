@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2026
+ * Copyright (c) 2026 Downspade
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,7 @@
 #define SET_LOCATION_FACE_H_
 
 /*
- * SET LOCATION face (custom LCD only)
+ * SET LOCATION face
  *
  * Sets the wearer's location (the same location.u32 that sunrise_sunset_face,
  * wadokei_face, and moon_phase_ascii_face all read) through three stages,
@@ -35,6 +35,10 @@
  * coordinates), then fine-tune from there. The city step and the lat/lon
  * step are linked -- picking a city is just a fast way to get the digit
  * editor close to the right answer before nudging it exact.
+ *
+ * Both display types are supported: the top-row labels have two-character
+ * fallbacks on classic, and the lat/lon editor there uses the same shape
+ * sunrise_sunset_face's own classic branch uses.
  *
  * Button mapping (custom LCD's top area only ever shows a plain 3-letter
  * label -- no numbers, no borrowed indicators -- so the current zone
