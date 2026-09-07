@@ -50,11 +50,9 @@ static void _counter_term_face_update(counter_term_state_t *state) {
     // range (up to 65535) rather than the actual guarantee.
     char buf[6];
 
-    // Days elapsed since the recorded start date. Custom uses the full 5-character
-    // WATCH_POSITION_TOP; classic has no such field, so it uses TOP_RIGHT (2 characters)
-    // instead -- and since TOP_RIGHT's tens digit (2A/2D/2G sharing one address, see
-    // Classic_LCD_Display_Mapping) only renders correctly for 0-3, classic's count wraps at 40
-    // (0-39) rather than 100.
+    // Days elapsed since the recorded start date. Custom uses the full 5-character TOP;
+    // classic uses TOP_RIGHT (2 characters) and wraps at 40 rather than 100, since its
+    // tens digit only renders 0-3.
     watch_date_time_t date_time = movement_get_local_date_time();
     uint32_t julian_now = _counter_term_face_juliandaynum(date_time.unit.year + WATCH_RTC_REFERENCE_YEAR, date_time.unit.month, date_time.unit.day);
     uint32_t julian_start = _counter_term_face_juliandaynum(state->start_year, state->start_month, state->start_day);

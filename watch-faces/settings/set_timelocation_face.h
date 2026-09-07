@@ -29,15 +29,12 @@
  * SET TIME+LOCATION face
  *
  * A single guided setup flow covering everything set_time_face and set_location_face cover
- * between them -- date, timezone, location, and time of day -- in one pass. This is a
- * self-contained face: it doesn't call into set_time_face.c or set_location_face.c, it has
- * its own copy of the date/time and city/lat-lon logic those faces use, so this face can be
- * dropped into another project as this .c/.h pair alone, with no dependency on either of them
- * being present.
+ * between them -- date, timezone, location, and time of day -- in one pass. Self-contained: it
+ * has its own copy of the date/time and city/lat-lon logic those faces use, rather than calling
+ * into them, so it can be dropped into another project as this .c/.h pair alone.
  *
- * Both display types are supported: the top-row labels have two-character
- * fallbacks on classic, and the lat/lon editor there uses the same shape
- * sunrise_sunset_face's own classic branch uses.
+ * Both display types are supported: top-row labels have two-character fallbacks on classic,
+ * and the lat/lon editor there uses the same shape as sunrise_sunset_face's classic branch.
  *
  * Nine pages, advanced with Light (short press):
  *

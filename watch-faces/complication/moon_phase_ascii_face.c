@@ -742,21 +742,13 @@ static void _update(moon_phase_ascii_state_t *state) {
         if (currentday > phase_changes[phase_index] * phase_scale && currentday <= phase_changes[phase_index + 1] * phase_scale) break;
     }
 
-    // Top: moon age in days with a decimal point -- "15.4" rather than digit-only "154"
-    // (positions 0/1/10 have no spare segment for a point). '%4.1f' right-aligns into 4 of
-    // custom's 5 TOP characters; the '.' lands at position 10 as the font's own '.' glyph, not
-    // watch_set_decimal_if_available() (that's a fixed pixel for WATCH_POSITION_BOTTOM's own
-    // decimal use, nowhere near TOP).
+    // Top: moon age in days with a decimal point, e.g. "15.4".
     snprintf(buf, sizeof(buf), "%4.1f ", currentday);
-    // Classic has no 3-character slot for a fractional day, so this rounds to the nearest
-    // whole day (truncating the tenths digit would silently floor half the time) and shows it
-    // at SECONDS -- TOP_RIGHT carries day-of-month instead (see the swap below).
+    // Classic has no room for a fractional day, so this rounds to the nearest whole day and
+    // shows it at SECONDS -- TOP_RIGHT carries day-of-month instead (see the swap below).
     char buf_classic[3];
     int rounded_days = (int)(currentday + 0.5);
     snprintf(buf_classic, sizeof(buf_classic), "%2d", rounded_days);
-    // watch_display_text_with_fallback() can't target different positions for its two
-    // branches, and plain watch_display_text() only writes TOP's first 2 characters -- so
-    // custom needs the _with_fallback variant's TOP case to reach all 5, split explicitly here.
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
         watch_display_text_with_fallback(WATCH_POSITION_TOP, buf, buf);
     } else {
@@ -872,28 +864,18 @@ static void _update_calendar(moon_phase_ascii_state_t *state) {
         local.unit.minute = e->minute;
     }
 
-    // TOP_LEFT has 3 slots, but plain watch_display_text() only writes the first 2 and never
-    // clears the 3rd -- use _with_fallback (which reaches it) and always supply a 3rd
-    // character so a stale digit can't linger. Right-aligned, variable width (a couple of
-    // total eclipses run over 100% and fill all 3 digits).
+    // TOP_LEFT's magnitude percentage, right-aligned (a couple of total eclipses run over 100%).
     sprintf(buf, "%3d", e->magnitude_pct);
-    // Classic only has 2 slots -- not enough for a 3-digit percentage, and there's no rounding
-    // that keeps a percentage meaningful in 2 digits -- so this shows the eclipse type instead
-    // (TO/PA/PE); unlike digits, none of T/O/P/A/E hit position 1's B/C and E/F aliasing.
+    // Classic only has 2 slots, not enough for a percentage, so shows the eclipse type instead.
     char buf_classic[3];
     if (e->penumbral) snprintf(buf_classic, sizeof(buf_classic), "PE");
     else if (e->magnitude_pct >= 100) snprintf(buf_classic, sizeof(buf_classic), "TO");
     else snprintf(buf_classic, sizeof(buf_classic), "PA");
     watch_display_text_with_fallback(WATCH_POSITION_TOP_LEFT, buf, buf_classic);
 
-    // TOP_RIGHT/SECONDS swap their usual roles (peak hour up top, year at SECONDS) because
-    // classic's TOP_RIGHT (position 2) has no F segment: the peak hour's tens digit is always
-    // 0-2 (safe), but the year's last-2-digits tens digit ranges 0-9 and would often need it.
-    //
-    // Even restricted to 0-2, zero-padding isn't safe on classic: 2A/2D/2G share an address,
-    // and '0' is the one digit here whose font byte wants A on but G off -- G is written last
-    // and silently overrides A, dropping '0's top-left stroke. Custom's position 2 has no such
-    // aliasing, so only classic needs the leading zero suppressed.
+    // TOP_RIGHT/SECONDS swap their usual roles (peak hour up top, year at SECONDS): classic's
+    // TOP_RIGHT can't reliably show every digit, but the peak hour's tens digit is always 0-2,
+    // which it can.
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) sprintf(buf, "%2d", local.unit.hour);
     else sprintf(buf, "%2d", local.unit.hour);
     watch_display_text(WATCH_POSITION_TOP_RIGHT, buf);

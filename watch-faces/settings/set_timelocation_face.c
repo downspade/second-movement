@@ -50,23 +50,15 @@ static bool _quick_ticks_running;
 static int32_t _current_offset; // cached UTC offset (seconds) for the Timezone page, like set_time_face's own
 
 // 24 whole-hour UTC offsets (-11..+12), most with five well-known cities spread across
-// different regions so the city-select step is actually useful, not three cities in one
-// country -- except -11 (SST) and -2 (FNT), kept at three: worldwide, -11 has only American
-// Samoa, Niue, and Midway Atoll, and -2 has only Fernando de Noronha, South Georgia, and
-// Greenland (already this table's -2 pick via NUUK), so a fourth and fifth entry there would
-// mean reaching for either tiny villages or a second city in a country already represented,
-// rather than another notable, distinct place. Coordinates are hundredths of a degree, same
-// encoding as movement_location_t -- ordinary well-known city locations, not precision-
-// critical, so these are hand-entered from general knowledge rather than sourced/cross-
-// checked; every entry's offset was, however, cross-checked against utz/zones.c's actual
-// zone_defns base offsets (see _stl_zone_index_for_utz's comment) to confirm each city
-// genuinely sits at the UTC offset its zone claims (standard time, ignoring DST, consistent
-// with this table having no DST concept of its own). Some zone abbreviations are truncated to
-// 3 characters from their usual 4-letter form (AKST->AKS, AZOT->AZO, AEST->AES, NZST->NZS);
-// UTC+8's zone is labeled SGT rather than the also-common-but-ambiguous CST, since -6 (US
-// Central) already uses that abbreviation here. (The abbreviations themselves aren't shown on
-// screen by this face -- City's own header is what's displayed -- but they're kept for
-// readability of this table and in case a future screen wants them.)
+// different regions -- except -11 (SST) and -2 (FNT), kept at three: worldwide, -11 has only
+// American Samoa, Niue, and Midway Atoll, and -2 has only Fernando de Noronha, South Georgia,
+// and Greenland (already this table's -2 pick via NUUK). Coordinates are hundredths of a
+// degree (movement_location_t's encoding), hand-entered from general knowledge; each entry's
+// offset was cross-checked against utz/zones.c's actual zone_defns base offsets (standard
+// time, ignoring DST). Some zone abbreviations are truncated to 3 characters (AKST->AKS,
+// AZOT->AZO, AEST->AES, NZST->NZS); UTC+8 is labeled SGT rather than the ambiguous CST, since
+// -6 (US Central) already uses that abbreviation. (Not shown on screen -- City's own header is
+// what's displayed -- kept for table readability.)
 typedef struct {
     char name[7];
     int16_t latitude;
@@ -108,19 +100,16 @@ static const location_city_t _cities_p12[] = { {"AUCKLD", -3685, 17476}, {"SUVA"
 
 #define ZONE(abbr_, offset_, cities_, utz_) { abbr_, offset_, cities_, sizeof(cities_) / sizeof(location_city_t), utz_ }
 
-// Starts at London (GMT) and runs eastward (increasing UTC offset), wrapping from +12 around to
-// -11 and back up to -1, rather than a plain ascending -11..+12 sort.
+// Starts at London (GMT) and runs eastward, wrapping from +12 to -11 and back up to -1, rather
+// than a plain ascending sort.
 //
-// utz_index picks, for each whole-hour offset here, a real named zone from utz/zones.h so that
-// confirming a zone can also call movement_set_timezone_index() -- preferring a same-named/same-
-// abbreviation zone where one exists (e.g. MSK->Moscow, JST->Tokyo), and among same-offset
-// candidates preferring one that doesn't observe DST, since this face's own offset list has no
-// DST concept. utz has no zone at exactly +11 or -1, so SBT and AZO fall back to the nearest
-// available zone (Guam/+10 and London/0 respectively); picking either neighbor is equally
-// "wrong" by an hour, so which way was arbitrary. AZO specifically falls back to London rather
-// than UTC: every utz_index here must stay unique, since _stl_zone_index_for_utz() reverse-maps
-// a utz_index back to a single row -- reusing UTC (already GMT's own utz_index) would make a
-// confirmed AZO always redisplay as GMT.
+// utz_index maps each offset to a real named zone from utz/zones.h so confirming a zone can
+// call movement_set_timezone_index() -- preferring a same-name/abbreviation zone where one
+// exists, and among same-offset candidates one without DST, since this face's offset list has
+// no DST concept. utz has no zone at exactly +11 or -1, so SBT and AZO fall back to the nearest
+// available zone (Guam/+10, London/0). AZO falls back to London rather than UTC because every
+// utz_index here must stay unique -- _stl_zone_index_for_utz() reverse-maps a utz_index to a
+// single row, and reusing GMT's UTC would make a confirmed AZO redisplay as GMT.
 static const location_timezone_t location_timezones[] = {
     ZONE("GMT", 0, _cities_0, UTZ_UTC),
     ZONE("CET", 1, _cities_p1, UTZ_LAGOS),
@@ -380,22 +369,13 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
                 watch_display_character('#', 8);
                 watch_display_character(state->working_latitude.sign ? 'S' : 'N', 9);
                 if (event.subsecond % 2) {
-                    // active_digit==4 means the N/S sign is being edited -- blink only that
-                    // (position 9), not "4 + active_digit" (position 8, the static '#' degree
-                    // symbol, which isn't part of this step and shouldn't blink too).
+                    // active_digit==4 is the N/S sign -- blink only position 9, not the '#' at 8.
                     if (state->active_digit == 4) watch_display_character(' ', 9);
                     else watch_display_character(' ', 4 + state->active_digit);
                 }
             } else {
-                // Same fallback shape as sunrise_sunset_face's classic branch: sign, a blank
-                // (where custom's degree-sign/N-S pair would be), then the 4 digits as one
-                // zero-padded number -- avoids the (0, 22) pixel below entirely, since it's
-                // not a free pixel on classic (see set_location_face.c's fix for why).
+                // Classic: sign, a blank, then the 4 digits as one zero-padded number.
                 sprintf(buf, "%c %04d", state->working_latitude.sign ? '-' : '+', abs(_stl_latlon_from_struct(state->working_latitude)));
-                // +2: buf's first 2 characters are the sign and a separator (space, or the
-                // longitude's hundreds digit), before the 4 digits active_digit indexes into.
-                // active_digit==4 means the sign is being edited -- that's buf[0], not
-                // buf[4+2]=buf[6] (past the 6 meaningful characters, into the null terminator).
                 if (event.subsecond % 2) buf[state->active_digit == 4 ? 0 : state->active_digit + 2] = ' ';
                 watch_display_text(WATCH_POSITION_BOTTOM, buf);
             }
@@ -403,9 +383,7 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
             watch_display_text_with_fallback(WATCH_POSITION_TOP, "Longi", "LO");
             if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
                 watch_set_decimal_if_available();
-                // Handle leading 1 for longitudes >99. (0, 22) is a free pixel on custom, but
-                // NOT on classic -- it's classic's minutes-tens digit's A/D segment (see
-                // Classic_LCD_Display_Mapping), so this whole branch is custom-only.
+                // Handle leading 1 for longitudes >99 (custom only).
                 if (state->working_longitude.hundreds == 1) watch_set_pixel(0, 22);
                 watch_display_character('0' + state->working_longitude.tens, 4);
                 watch_display_character('0' + state->working_longitude.ones, 5);
@@ -414,9 +392,7 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
                 watch_display_character('#', 8);
                 watch_display_character(state->working_longitude.sign ? 'W' : 'E', 9);
                 if (event.subsecond % 2) {
-                    // active_digit==4 means the E/W sign is being edited -- blink only that
-                    // (position 9), not "4 + active_digit" (position 8, the static '#' degree
-                    // symbol, which isn't part of this step and shouldn't blink too).
+                    // active_digit==4 is the E/W sign -- blink only position 9, not the '#' at 8.
                     if (state->active_digit == 4) {
                         watch_display_character(' ', 9);
                     } else {
@@ -426,10 +402,6 @@ static void _stl_update_display(movement_event_t event, set_timelocation_state_t
                 }
             } else {
                 sprintf(buf, "%c%05d", state->working_longitude.sign ? '-' : '+', abs(_stl_latlon_from_struct(state->working_longitude)));
-                // +2: buf's first 2 characters are the sign and a separator (space, or the
-                // longitude's hundreds digit), before the 4 digits active_digit indexes into.
-                // active_digit==4 means the sign is being edited -- that's buf[0], not
-                // buf[4+2]=buf[6] (past the 6 meaningful characters, into the null terminator).
                 if (event.subsecond % 2) buf[state->active_digit == 4 ? 0 : state->active_digit + 2] = ' ';
                 watch_display_text(WATCH_POSITION_BOTTOM, buf);
             }

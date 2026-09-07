@@ -38,23 +38,20 @@
 #define MINUTE_REPEATER_FACE_LOW_BATTERY_VOLTAGE_THRESHOLD 2200
 #endif
 
-// watch_buzzer_play_note() is NOT blocking: it just hands one note off to a
-// timer/interrupt-driven player and returns immediately (see watch_tcc.c on
-// both hardware and the simulator), and each call starts by aborting
-// whatever sequence is already playing. Calling it repeatedly in a loop (the
-// original repetition_minute_face's approach) means every call aborts the
-// previous note before it's ever heard -- true on real hardware too, not
-// just the simulator. The correct way to play more than one note is to
-// build a single sequence (note/duration-in-ticks pairs, see watch_tcc.h)
-// and hand the whole thing to watch_buzzer_play_sequence() once, same as
-// counter_face.c's beep_counter(). A negative pair count N followed by a
-// repeat count replays the preceding |N| pairs that many extra times,
-// which keeps a long run of identical chimes down to a few bytes.
+// Converts a duration in milliseconds to the tick count watch_tcc.h's note/duration pairs use
+// (15ms per tick), for building the sound_seq array in minute_repeater_chime_time.
 #define MINUTE_REPEATER_TICKS(ms) ((int8_t)((ms) / 15))
 
 // Chimes out the current time, Howdy neighbors: like an actual (very
 // expensive) watch with a minute repeater complication, it's boring at
 // 12:00/00:00 or 1:00 and very musical at 11:59 or 23:59.
+//
+// Builds a single note/duration-in-ticks sequence (see watch_tcc.h) and hands it to
+// watch_buzzer_play_sequence() once, same as counter_face.c's beep_counter() -- rather than
+// calling watch_buzzer_play_note() in a loop (the original repetition_minute_face's approach),
+// which doesn't block, so each call would abort the previous note before it's heard. A negative
+// pair count N followed by a repeat count replays the preceding |N| pairs that many extra
+// times, keeping a long run of identical chimes down to a few bytes.
 static void minute_repeater_chime_time(watch_date_time_t date_time) {
     int hours = date_time.unit.hour;
     int quarters = date_time.unit.minute / 15;

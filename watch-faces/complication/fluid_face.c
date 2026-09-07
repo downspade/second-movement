@@ -44,55 +44,29 @@
 #define FLUID_FACE_LOW_BATTERY_VOLTAGE_THRESHOLD 2400
 #endif
 
-// How many "grains" a single physical segment can hold before it's full and
-// can't accept any more. >1 lets a pile pack into fewer distinct lit
-// segments (denser, visually less busy) for the same total amount of
-// liquid; the segment itself still only has ON/OFF to show, so it's lit
-// whenever it holds anything at all, regardless of how close to full.
+// Grains a single segment can hold before it's full (see fluid_can_receive).
 #define FLUID_SEGMENT_CAPACITY 2
 
-// How hard a knock has to be to shatter the display, as RAW (non-filtered)
-// total-acceleration magnitude. We tried the sensor's own hardware wake-up
-// comparator (high-pass filtered, gravity subtracted out) for this, but:
-// (a) FDS (the filter-type bit) turned out to be a global switch that also
-// high-pass-filters the normal OUT_X/Y/Z data our own FIFO reads come from,
-// which broke tilt-direction sensing (needs gravity's DC component intact)
-// and the quiet-variation check below; and (b) even taken on its own, the
-// hardware comparator's response felt noticeably duller/less sensitive than
-// doing it ourselves. So this is back to a plain magnitude threshold, which
-// means it has to clear the ~1G baseline from gravity as well as the actual
-// knock -- see ACCEL_QUIET_VARIATION_G's comment. Unverified on real
-// hardware -- see fluid_face.h.
+// Peak total-acceleration magnitude, in g, RAW (non-filtered, so it includes the ~1G gravity
+// baseline) -- a knock at or above this shatters the display. Unverified on real hardware --
+// see fluid_face.h.
 #define ACCEL_TRIGGER_G 2.5f
 
-// A watch just sitting still still reads ~1G the whole time (gravity), so
-// "quiet" can't be "magnitude below X" -- confirmed on hardware, it never
-// dips low enough for that to fire. It also can't be "the combined
-// magnitude isn't changing": spinning the watch keeps |g| pinned at ~1G
-// even though it's clearly in motion, since gravity's magnitude doesn't
-// care about orientation, only its direction does. So "quiet" instead means
-// the sum of how much X, Y, and Z have each individually swung (max-min)
-// over the last second doesn't exceed this -- rotation shows up here even
-// when it doesn't in the combined magnitude. This is a different quantity
-// than the single-channel version this constant used to gate, so expect to
-// retune it.
+// Below this, the windowed X/Y/Z swing (see fluid_accel_variation_g) counts as "quiet" --
+// used to detect when a shatter has settled enough to start reassembling.
 #define ACCEL_QUIET_VARIATION_G 0.3f
 #define ACCEL_RANGE LIS2DW_RANGE_4_G   // headroom above ACCEL_TRIGGER_G without clipping
 #define ACCEL_DATA_RATE LIS2DW_DATA_RATE_100_HZ
 
 // Raw-to-g conversion for ACCEL_RANGE. movement.c leaves the sensor in
-// LIS2DW_MODE_LOW_POWER / LIS2DW_LP_MODE_1 (12-bit) at startup and fluid_face
-// never changes that, so each raw sample is a signed 12-bit code (+/-2048)
-// left-justified into the 16-bit register (i.e. shifted left 4 bits), with
-// magnitude 2048 representing ACCEL_RANGE_G worth of acceleration. So
-// raw-counts-per-g = (2048 / ACCEL_RANGE_G) * 16 = 32768 / ACCEL_RANGE_G.
-// Confirmed against hardware: resting flat read ~400 raw on the idle axis,
-// ~8000 raw on the axis facing straight down -- both consistent with this
-// formula's prediction of 8192 raw per g at a 4g range. This replaces
-// lis2dw_get_acceleration_measurement()'s own borrowed/unverified lsb-value
-// table (see its FIXME), which also isn't usable directly on FIFO samples
-// since it ignores its input and always re-reads the live (non-FIFO)
-// registers instead.
+// LIS2DW_MODE_LOW_POWER / LIS2DW_LP_MODE_1 (12-bit), so each raw sample is a signed 12-bit
+// code (+/-2048) left-justified into the 16-bit register, with magnitude 2048 representing
+// ACCEL_RANGE_G. So raw-counts-per-g = (2048 / ACCEL_RANGE_G) * 16 = 32768 / ACCEL_RANGE_G.
+// Confirmed against hardware (resting flat: ~400 raw idle axis, ~8000 raw straight-down axis,
+// both matching the formula's 8192 raw/g at 4g range). This replaces
+// lis2dw_get_acceleration_measurement()'s own borrowed/unverified lsb-value table (see its
+// FIXME), which also isn't usable on FIFO samples since it ignores its input and always
+// re-reads the live registers instead.
 #define ACCEL_RANGE_G 4.0f // must match ACCEL_RANGE
 #define ACCEL_COUNTS_PER_G (32768.0f / ACCEL_RANGE_G)
 
@@ -105,9 +79,8 @@
 #define ACCEL_SCREEN_X(ax, ay) (ay)
 #define ACCEL_SCREEN_Y(ax, ay) (-(ax))
 
-// Below this combined X/Y magnitude, treat the tilt reading as too small to
-// trust (e.g. resting nearly flat, or the simulator where it's always 0) --
-// callers keep the last known-good direction instead of accepting it.
+// Combined X/Y magnitude below which a tilt reading is too small to trust (see
+// fluid_tilt_direction) -- e.g. resting nearly flat, or the simulator where it's always 0.
 #define ACCEL_TILT_DEADZONE_G 0.15f
 
 #define QUIET_TICKS_REQUIRED (5 * FLUID_TICK_FREQUENCY) // 5 seconds of calm before reassembling
@@ -120,34 +93,18 @@
 #define DIR_N 6
 #define NUM_DIRS 8
 
-// The colon (com=0, seg=0) sorts first among all 92 segments in
-// fluid_face_data.h (see gen_fluid_header.py's sort key), so it's always
-// index 0. It joins the simulation like any other segment now -- no special
-// handling needed beyond seeding it into the target pattern.
-//
-// On classic the colon is a different (com, seg) that doesn't happen to sort
-// first, so fluid_face_classic_data.h #defines this one directly instead.
+// Pixel index of the colon. It's always 0 on custom: (com=0, seg=0) sorts first among all 92
+// segments in fluid_face_data.h (see gen_fluid_header.py's sort key). On classic the colon is
+// a different (com, seg) that doesn't happen to sort first, so fluid_face_classic_data.h
+// #defines this one directly instead.
 #if !defined(FORCE_CLASSIC_LCD_TYPE)
 #define FLUID_COLON_PIXEL 0
 #endif
 
-// PM, 24H, SIGNAL/alarm, BELL/time-signal, and (custom LCD only) ARROWS/low-battery
-// indicators, all just ordinary pixels in the target pattern now -- previously PM/24H were
-// drawn separately via watch_set_indicator() after the fact, which both kept them
-// fixed/unaffected by the shatter and fluid_step() effects (defeating the point of those)
-// and, worse, got silently wiped every tick by the grain loop redrawing every *other* pixel
-// these addresses are also part of. SIGNAL/BELL/ARROWS had the exact same bug (fluid_redraw()
-// draws every pixel from state->filled every tick, and fluid_compute_time_pattern's memset
-// zeroes all of them first) but were never folded into the pattern when PM/24H were fixed, so
-// the alarm, chime, and low-battery icons were silently cleared again on the very next tick
-// after being set -- making it look (and, via EVENT_ALARM_LONG_PRESS's fluid_toggle_time_signal,
-// *feel*) like the chime setting wasn't sticking, even though the underlying
-// state->time_signal_enabled it actually acts on was unaffected the whole time.
-//
-// On classic, these five (minus ARROWS -- the module has no low-battery icon) are instead
-// #defined directly in fluid_face_classic_data.h: com*23+seg is a custom-LCD-specific
-// pixel-index formula (23 segs/COM line there; classic's pixel order has no such regularity,
-// so its data header hands over plain literal indices instead).
+// Pixel indices of the PM, 24H, SIGNAL/alarm, BELL/time-signal, and (custom LCD only)
+// ARROWS/low-battery indicators, each com*23+seg (23 segs/COM line on custom). On classic,
+// these five (minus ARROWS -- the module has no low-battery icon) are instead #defined
+// directly in fluid_face_classic_data.h, since classic's pixel order has no such regularity.
 #if !defined(FORCE_CLASSIC_LCD_TYPE)
 #define FLUID_PM_PIXEL (3 * 23 + 21)
 #define FLUID_24H_PIXEL (2 * 23 + 21)
@@ -156,14 +113,9 @@
 #define FLUID_ARROWS_PIXEL (2 * 23 + 0)
 #endif
 
-// Segment bits for weekday abbreviation letters, always uppercase A-Z from
-// watch_utility_get_long_weekday() ("MON".."SUN", custom LCD -- 3 characters) or
-// watch_utility_get_weekday() ("MO".."SU", classic -- 2 characters, see
-// fluid_compute_time_pattern). Custom_LCD_Character_Set / Classic_LCD_Character_Set
-// (watch_common_display.h) are already indexed by character - 0x20 with this exact bit
-// convention (bit 0 = segment A .. bit 7 = segment H, same as fluid_digit_font), so reuse
-// them directly rather than hand-copying a subset that could silently drift out of sync
-// with the real font.
+// Segment bits for a weekday abbreviation letter. Reuses Custom_LCD_Character_Set /
+// Classic_LCD_Character_Set directly (same bit convention as fluid_digit_font) rather than
+// hand-copying a subset that could drift out of sync with the real font.
 static inline uint8_t fluid_weekday_char_bits(char c) {
 #if defined(FORCE_CLASSIC_LCD_TYPE)
     return Classic_LCD_Character_Set[(uint8_t) c - 0x20];
@@ -181,14 +133,9 @@ static void fluid_set_char(uint8_t *out, const int8_t *pixels, int num_segs, uin
     }
 }
 
-// Everything the display should show for the current moment: hours,
-// minutes, seconds, weekday, day of month, the colon, and the PM/24H
-// indicators, all as one pattern over the same 92-pixel pool. Recomputed
-// fresh every tick (by both the ordinary
-// clock and the settle-back animation), so it always reflects whatever
-// time it is *right now* -- including while reassembling, so the target
-// itself keeps moving forward as real seconds (and occasionally weekday/
-// day) pass.
+// Everything the display should show right now, as one pattern over the 92-pixel pool.
+// Recomputed fresh every tick by both the clock and the settle-back animation, so the target
+// keeps moving forward as real time passes even while reassembling.
 static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now, bool alarm_enabled, bool time_signal_enabled, bool battery_low) {
     uint8_t hour = now.unit.hour;
     bool is_12h = movement_clock_mode_24h() == MOVEMENT_CLOCK_MODE_12H;
@@ -231,6 +178,10 @@ static void fluid_compute_time_pattern(uint8_t *out, watch_date_time_t now, bool
     fluid_set_char(out, fluid_weekday3_pixel, 8, fluid_weekday_char_bits(weekday[2]));
 #endif
 
+    // Setting these as ordinary pixels in the pattern (rather than watch_set_indicator()) lets
+    // them join the shatter/settle effects like every other segment; drawing any of them
+    // separately would also get them silently wiped every tick, since fluid_redraw() redraws
+    // every pixel in state->filled and this function's memset zeroes these addresses first.
     out[FLUID_COLON_PIXEL] = 1;
     out[FLUID_PM_PIXEL] = is_pm ? 1 : 0;
     out[FLUID_24H_PIXEL] = is_12h ? 0 : 1;
@@ -255,7 +206,9 @@ static void fluid_check_battery_periodically(fluid_face_state_t *state, watch_da
 // PM, 24H, SIGNAL, BELL, and ARROWS are drawn purely as pixels (see fluid_compute_time_pattern)
 // -- ordinary members of the same 92-pixel pool this loop already redraws in full every call,
 // so they join the shatter/settle effects like every other segment instead of sitting fixed
-// on top of them via a separate watch_set_indicator().
+// on top of them via a separate watch_set_indicator(). A segment is lit whenever its count is
+// nonzero, regardless of how close to FLUID_SEGMENT_CAPACITY it is -- capacity above 1 just
+// lets a pile pack into fewer lit segments, for a denser, less busy look.
 static void fluid_redraw(fluid_face_state_t *state) {
     for (int i = 0; i < FLUID_NUM_PIXELS; i++) {
         if (state->filled[i]) {
@@ -280,13 +233,9 @@ static inline bool fluid_can_receive(fluid_face_state_t *state, int8_t cell) {
     return cell >= 0 && state->filled[cell] < FLUID_SEGMENT_CAPACITY;
 }
 
-// Move (at most) one grain out of pixel `from`, one step in the given
-// direction (0..7, see the DIR_* constants), into whichever neighbor has
-// room. If the primary-direction neighbor is full (or doesn't exist, i.e.
-// we're at the edge of the display), try sliding sideways (+/-90 degrees
-// from the fall direction) instead, so a pile spreads out rather than
-// jamming into a single rigid column. A cell holding 2 grains only ever
-// sends one of them per tick -- see fluid_step.
+// Moves at most one grain out of pixel `from` toward whichever neighbor has room. If the
+// primary-direction neighbor is full or off-screen, slides sideways (+/-90 degrees) instead,
+// so a pile spreads out rather than jamming into a rigid column.
 static void fluid_try_move(fluid_face_state_t *state, int from, int dir_index) {
     int8_t primary = fluid_pixel_dir[dir_index][from];
     if (fluid_can_receive(state, primary)) {
@@ -319,11 +268,9 @@ static void fluid_step(fluid_face_state_t *state, int dir_index) {
     }
 }
 
-// Snap up to SETTLE_STEPS_PER_TICK mismatched grains into place. Returns
-// true once the display fully matches the current time. The target is
-// always a plain 0/1 pattern (a normal digit display never doubles up), so
-// a cell sitting at FLUID_SEGMENT_CAPACITY may take an extra tick or two to
-// fully drain back to it.
+// Snaps up to SETTLE_STEPS_PER_TICK mismatched grains into place. Returns true once the
+// display fully matches the current time. The target is always a plain 0/1 pattern, so a cell
+// sitting at FLUID_SEGMENT_CAPACITY may take an extra tick or two to fully drain back to it.
 static bool fluid_settle_step(fluid_face_state_t *state) {
     uint8_t target[FLUID_NUM_PIXELS];
     fluid_compute_time_pattern(target, movement_get_local_date_time(), movement_alarm_enabled(), state->time_signal_enabled, state->battery_low);
@@ -362,31 +309,20 @@ static inline float fluid_raw_to_g(int16_t raw) {
     return (float) raw / ACCEL_COUNTS_PER_G;
 }
 
-// Reads every sample the accelerometer has buffered since the last call.
-// Returns the largest total-acceleration magnitude among them, in g (peeking
-// at only the latest sample would miss a brief shock between ticks, so we
-// scan the whole FIFO for this); also writes the X/Y/Z of the *last* (most
-// recent) sample to *out_x/*out_y/*out_z, for direction/quiet purposes --
-// unlike the peak, those should be recent, not the biggest. Returns false
-// (and leaves *out_x/*out_y/*out_z untouched) if the FIFO had nothing new --
-// always true on the simulator (no I2C hardware), but also possible on real
-// hardware if a tick happens to land between samples. Callers must not
-// treat that as "reading (0,0,0)": that's nowhere near a real sample (resting
-// still reads ~1G on some axis) and would corrupt anything that looks at
-// the actual values, like the quiet-variation window below.
+// Reads every sample buffered since the last call. Returns the largest total-acceleration
+// magnitude among them in g (peeking at only the latest sample would miss a brief shock
+// between ticks), and writes the *last* sample's X/Y/Z to *out_x/*out_y/*out_z for
+// direction/quiet purposes, which want recent data, not the peak. Returns false (leaving the
+// outputs untouched) if the FIFO had nothing new -- callers must not treat that as (0,0,0),
+// which would corrupt anything reading the actual values, like the quiet-variation window.
 static bool fluid_read_peak_g(float *out_x, float *out_y, float *out_z, float *out_peak) {
     lis2dw_fifo_t fifo = {0};
-    // The return value is the sensor's FIFO_SAMPLE_OVERRUN bit (see lis2dw.c): the 32-
-    // sample FIFO filled up completely and started overwriting its own oldest entries
-    // before we got here, so some samples -- possibly including the true peak of a knock
-    // -- are already gone by the time we read. There's nothing to recover after the fact
-    // (every other caller of lis2dw_read_fifo in this codebase discards it too), and the
-    // only real mitigation is polling often enough that 32 samples (320ms at 100Hz) can't
-    // fill up between reads. Note this is a known tradeoff of FLUID_MODE_CLOCK now
-    // ticking at 1Hz instead of FLUID_TICK_FREQUENCY (see fluid_set_mode) for battery
-    // life: a knock landing in the ~680ms gap the FIFO can't cover may go undetected while
-    // idle on the plain clock display. FLUID_MODE_FLUID/SETTLING still poll fast enough
-    // not to have this problem.
+    // Return value is FIFO_SAMPLE_OVERRUN: the 32-sample FIFO filled up and started
+    // overwriting its oldest entries before we got here, possibly losing a knock's true peak.
+    // Nothing to recover after the fact; the mitigation is polling often enough that 32
+    // samples (320ms at 100Hz) can't fill between reads. FLUID_MODE_CLOCK's 1Hz tick (battery
+    // life, see fluid_set_mode) means a knock in the ~680ms gap it can't cover may go
+    // undetected while idle; FLUID_MODE_FLUID/SETTLING poll fast enough not to have this issue.
     lis2dw_read_fifo(&fifo);
     lis2dw_clear_fifo();
 
@@ -418,17 +354,12 @@ static float fluid_window_range(const float *window, uint8_t count) {
     return hi - lo;
 }
 
-// If have_sample, pushes this tick's X/Y/Z into their rolling 1-second
-// windows first (skip that when there was no new FIFO data this tick --
-// see fluid_read_peak_g -- a hole in the window is fine, but a fake (0,0,0)
-// sample is not: it looks like a huge, spurious swing). Either way, returns
-// the sum of how much each axis has swung (max-min) over the window as it
-// now stands. Unlike a single magnitude-variation check, this catches pure
-// rotation: spinning the watch keeps |g| pinned at ~1G throughout (gravity's
-// magnitude doesn't care about orientation), but the individual X/Y/Z
-// components swing substantially as that fixed-length vector points a
-// different way each moment, so their sum does not stay flat the way the
-// magnitude does.
+// If have_sample, pushes this tick's X/Y/Z into their rolling 1-second windows (skipped when
+// there was no new FIFO data -- a hole in the window is fine, but a fake (0,0,0) sample would
+// look like a huge spurious swing). Either way, returns the sum of how much each axis has
+// swung (max-min) over the window. Unlike a magnitude check, this catches pure rotation: |g|
+// stays pinned at ~1G while spinning, but the individual X/Y/Z components swing as that
+// fixed-length vector points a different way each moment.
 static float fluid_accel_variation_g(fluid_face_state_t *state, bool have_sample, float x, float y, float z) {
     if (have_sample) {
         state->accel_window_x[state->accel_window_pos] = x;
@@ -493,7 +424,10 @@ void fluid_face_activate(void *context) {
 
     movement_set_accelerometer_background_rate(ACCEL_DATA_RATE);
     lis2dw_set_range(ACCEL_RANGE);
-    lis2dw_set_filter_type(LIS2DW_FILTER_LOW_PASS); // raw+gravity data -- see ACCEL_TRIGGER_G's comment
+    // Raw + gravity, not the sensor's own high-pass-filtered wake-up path: that filter bit is a
+    // global switch that also filters the OUT_X/Y/Z data our FIFO reads use, which would break
+    // tilt sensing and fluid_accel_variation_g's quiet check, and its response felt duller anyway.
+    lis2dw_set_filter_type(LIS2DW_FILTER_LOW_PASS);
     lis2dw_enable_fifo();
     lis2dw_clear_fifo();
 
@@ -505,9 +439,7 @@ void fluid_face_activate(void *context) {
     fluid_set_mode(state, FLUID_MODE_CLOCK);
     fluid_check_battery_periodically(state, movement_get_local_date_time());
     fluid_compute_time_pattern(state->filled, movement_get_local_date_time(), movement_alarm_enabled(), state->time_signal_enabled, state->battery_low);
-    // First draw happens in response to EVENT_ACTIVATE below, not here --
-    // it always follows immediately, so drawing here too would just be the
-    // same frame rendered twice.
+    // First draw happens in EVENT_ACTIVATE below, which always follows immediately.
 }
 
 bool fluid_face_loop(movement_event_t event, void *context) {
@@ -587,13 +519,8 @@ bool fluid_face_loop(movement_event_t event, void *context) {
             movement_move_to_next_face();
             break;
         case EVENT_LOW_ENERGY_UPDATE:
-            // All peripherals but the RTC (I2C included) are disabled during
-            // this event, so no accelerometer polling here. Show a plain
-            // ticking clock instead -- fluid_compute_time_pattern/
-            // fluid_redraw only ever touch the RTC and the LCD, both fine.
-            // A long sleep is as good a reason as any to consider it
-            // already "settled", so drop out of FLUID/SETTLING if we were
-            // mid-effect when sleep started.
+            // I2C is disabled during this event, so no accelerometer polling -- fall back to a
+            // plain ticking clock and drop out of FLUID/SETTLING if mid-effect when sleep started.
             state->mode = FLUID_MODE_CLOCK;
             state->manual_recovery = false;
             fluid_compute_time_pattern(state->filled, movement_get_local_date_time(), movement_alarm_enabled(), state->time_signal_enabled, state->battery_low);

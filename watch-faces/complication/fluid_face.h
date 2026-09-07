@@ -28,36 +28,25 @@
 /*
  * FLUID FACE
  *
- * Normally shows a plain digital clock -- hours, minutes, seconds, weekday,
- * day of month, and the colon. A hard knock (real accelerometer shock on
- * hardware; the ALARM button stands in for it here, since the simulator has
- * no accelerometer) shatters ALL of that into a falling-sand "liquid" that
- * piles up in whichever direction the watch is currently tilted. Once
- * things go quiet for 5 seconds, the pile reassembles into the current
- * time over a couple of seconds -- seconds (and weekday/day, if a boundary
- * happens to pass) keep advancing throughout, since the target it's
- * reassembling into is recomputed fresh every tick. Every indicator --
- * PM/24H, the alarm (SIGNAL) bell, and the hourly chime (BELL) -- is baked
- * into that same pattern, so they all join the effect just like the digits
- * do. On the custom LCD only, the low-battery warning (ARROWS) joins them
- * too -- the classic module has no such icon.
+ * A plain digital clock that a hard knock (accelerometer shock; ALARM button in the
+ * simulator) shatters into a falling-sand "liquid" piling up in whichever direction the watch
+ * is tilted. After 5 quiet seconds, it reassembles into the current time -- the target keeps
+ * advancing throughout, since it's recomputed fresh every tick. PM/24H, the alarm bell, the
+ * hourly chime, and (custom LCD only) the low-battery warning are baked into the same pattern,
+ * so they join the effect too.
  *
- * Real hardware calibration is unverified (see the ACCEL_* constants in
- * fluid_face.c) -- expect to retune the trigger/quiet thresholds and the
- * tilt-direction axis mapping by testing on an actual watch, both because
- * "how hard is 2G" is inherently a physical question and because lis2dw.c's
- * g-unit conversion is known-imprecise (see CLAUDE.md).
+ * Real hardware calibration is unverified (see the ACCEL_* constants in fluid_face.c) --
+ * expect to retune the trigger/quiet thresholds and tilt-direction mapping on an actual watch,
+ * since lis2dw.c's g-unit conversion is known-imprecise (see CLAUDE.md).
  *
- * Supports both display types via FORCE_CUSTOM_LCD_TYPE/FORCE_CLASSIC_LCD_TYPE
- * (see the Makefile's DISPLAY= flag). See fluid_face_data.h (custom) and
- * fluid_face_classic_data.h (classic) for the per-segment position/adjacency
- * data each is built from -- both generated from watch-library/simulator/
+ * Supports both display types via FORCE_CUSTOM_LCD_TYPE/FORCE_CLASSIC_LCD_TYPE. See
+ * fluid_face_data.h (custom) and fluid_face_classic_data.h (classic) for the per-segment
+ * position/adjacency data each is built from, generated from watch-library/simulator/
  * shell.html's segment artwork (plus, for classic, watch_common_display.h's
- * Classic_LCD_Display_Mapping, since classic's segments alias/omit some
- * font bits that the artwork alone doesn't reveal).
+ * Classic_LCD_Display_Mapping, since classic's segments alias/omit some font bits the artwork
+ * alone doesn't reveal).
  *
- * Press MODE to leave. Press ALARM to manually toggle shatter/return (this
- * is the only way to see it happen in the simulator); long-press ALARM to
+ * Press MODE to leave. Press ALARM to manually toggle shatter/return; long-press ALARM to
  * toggle the hourly chime, same as clock_face.
  */
 
@@ -78,45 +67,29 @@ typedef enum {
 } fluid_mode_t;
 
 typedef struct {
-    // 0 = empty, up to FLUID_SEGMENT_CAPACITY (see fluid_face.c) -- each
-    // physical segment can hold more than one "grain" of liquid, so a dense
-    // pile doesn't have to light up as many distinct segments to hold the
-    // same total amount. Lit for display whenever this is > 0.
+    // 0 = empty, up to FLUID_SEGMENT_CAPACITY (see fluid_face.c). Lit for display when > 0.
     uint8_t filled[FLUID_NUM_PIXELS];
     fluid_mode_t mode;
     // True from the moment Alarm forces FLUID_MODE_SETTLING (skipping the quiet timer) until
-    // that settle actually finishes and mode reaches FLUID_MODE_CLOCK. While true, EVENT_TICK's
-    // accelerometer check is skipped entirely, so residual physical motion right after the
-    // shake that caused the shatter can't immediately re-trigger and undo the manual recovery.
+    // that settle finishes. While true, EVENT_TICK's accelerometer check is skipped, so
+    // residual motion right after the shake can't immediately undo the manual recovery.
     bool manual_recovery;
     uint16_t quiet_ticks; // consecutive ticks with no shake, while in FLUID_MODE_FLUID
-    // Sitting still still reads ~1G (gravity), so "quiet" can't mean "low
-    // magnitude" -- and it can't mean "magnitude isn't changing" either:
-    // spinning the watch keeps the magnitude of gravity fixed at ~1G even
-    // though it's very much in motion, only its direction changes. So this
-    // tracks each of the X/Y/Z components separately (a rolling 1-second
-    // window per axis) -- rotation shows up there even when the combined
-    // magnitude doesn't.
+    // Rolling 1-second window per axis, since gravity's magnitude alone can't detect "quiet"
+    // (spinning keeps |g| pinned at ~1G) -- see ACCEL_QUIET_VARIATION_G in fluid_face.c.
     float accel_window_x[FLUID_ACCEL_WINDOW_LEN];
     float accel_window_y[FLUID_ACCEL_WINDOW_LEN];
     float accel_window_z[FLUID_ACCEL_WINDOW_LEN];
     uint8_t accel_window_pos;
     uint8_t accel_window_count;
-    // Last fall direction (0..7, see the DIR_* constants in fluid_face.c).
-    // When the tilt reading is too weak to trust, we keep this instead of
-    // forcing a default -- there's no reason to believe "down" over
-    // whatever direction it was already falling.
+    // Last fall direction (0..7, see the DIR_* constants in fluid_face.c). Kept as-is when the
+    // tilt reading is too weak to trust, rather than forcing a default direction.
     int8_t last_dir_index;
-    // Hourly chime, same as clock_face's ALARM long-press toggle. Resets to
-    // false on every reboot (only initialized when first allocated).
-    bool time_signal_enabled;
-    // Low-battery warning, checked once a day like clock_face's own.
+    bool time_signal_enabled; // hourly chime; resets false on every reboot
     uint8_t last_battery_check; // day of month it was last checked, 0 = never
     bool battery_low;
-    // The sensor's range/filter/background-rate are global registers shared with every
-    // other accelerometer-using face (e.g. lis2dw_monitor_face, activity_logging_face).
-    // Saved on activate and put back on resign, so leaving this face doesn't silently
-    // leave the sensor at fluid_face's own settings for everyone else.
+    // The sensor's range/filter/background-rate are global registers shared with every other
+    // accelerometer-using face. Saved on activate, restored on resign.
     lis2dw_range_t saved_accel_range;
     lis2dw_filter_t saved_accel_filter;
     lis2dw_data_rate_t saved_accel_background_rate;

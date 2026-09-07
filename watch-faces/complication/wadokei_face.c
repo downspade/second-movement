@@ -33,62 +33,39 @@
 #include "filesystem.h"
 #include "sunriset.h"
 
-// Rika Nenpyo (理科年表) definition of 明六つ/暮六つ: the sun's center is
-// 7 degrees 21 minutes 40 seconds below the horizon, rather than the usual
-// -6 degree civil twilight.
+// Rika Nenpyo (理科年表) definition of 明六つ/暮六つ, not the usual -6 degree civil twilight.
 #define WADOKEI_TWILIGHT_ALTITUDE (-7.361111)
 
-// The 12 branches, indexed 0=子,1=丑,2=寅,3=卯,4=辰,5=巳,6=午,7=未,8=申,9=酉,10=戌,11=亥
-// (matches the row order in koku.csv), 5 characters each for WATCH_POSITION_TOP (custom
-// LCD). Note: uppercase 'I' renders incorrectly outside display position 0 on the custom
-// LCD (see Custom_LCD_Character_Set in watch_common_display.h); substituting lowercase
-// 'i' here follows the same workaround already used elsewhere (e.g. probability_face.c's
-// "TAiLS", blackjack_face.c's "WlN"/"TlE"). 'M' outside position 0 has a similar minor
-// quirk that the existing codebase accepts as-is (e.g. "Table"), so UMA is left uppercase.
+// The 12 branches (十二支), each representing a span of time. Indexed 0=子..11=亥.
 static const char *branch_names[12] = {
     "NE   ", "USHl ", "TORA ", "U    ", "TATSU", "MI   ",
     "UMA  ", "HITJl", "SARU ", "TORl ", "INU  ", "I    ",
 };
 
-// One quarter name per position, spelled out in full (一つ/二つ/三つ/四つ), 6 characters
-// each for WATCH_POSITION_BOTTOM.
+// One quarter name per position (一つ/二つ/三つ/四つ).
 static const char *quarter_names[4] = {
     "Hitotu", "Futatu", "Mittu ", "Yottu ",
 };
 
-// Classic-LCD branch names for mode 1: 4 characters each, occupying HOURS+MINUTES. TOP isn't
-// used at all on classic in this mode.
-//
-// Written as plain full spellings (T/M/R/I included) despite classic's positions-4-9 pitfalls,
-// because watch_display_character() already substitutes a safe character for each affected
-// letter (t/T->+, U/V/W->u, A->a, N/M/m->n, 7->&, L->!, J->j, o->O, c->C, and I->l at every
-// position but 0 -- see its "special cases for positions 4 and 6" block). E.g. 辰's "tAtU"
-// actually draws "+A+U". Confirmed by walking every character through that substitution logic
-// against the real font bit patterns, not by eye -- an earlier revision of this comment got
-// this wrong by hand-substituting letters the driver already handled.
+// Classic-LCD branch names for mode 1.
 static const char *branch_names_classic[12] = {
     " NE ", " USI", "torA", " U  ", "tAtU", "n&1 ",
     "Un&A", "HtJI", "SArU", "torI", "1NU ", "  I ",
 };
 
-// Quarter markers for classic's SECONDS (2 characters: digit + lowercase t for "-tsu").
-// No H-segment or position-4/6 issue here at all -- positions 8/9 have neither pitfall.
+// Quarter markers for classic's SECONDS.
 static const char *quarter_names_classic[4] = {
     "1t", "2t", "3t", "4t",
 };
 
-// Traditional bell-count ("koku") names, per koku.csv: each branch has a bell-count digit
-// (cycling 9,8,7,6,5,4 twice per day) and a time-of-day prefix. Quarters 1-2 (一つ/二つ)
-// use the plain name; quarters 3-4 (三つ/四つ) append "HAN" (半).
-// "Hi" (昼) would collide with position-0-only 'I' outside position 0, so it's "HiR".
+// Traditional bell-count ("koku") names: a digit (cycling 9,8,7,6,5,4 twice per day) plus a
+// time-of-day prefix. Quarters 3-4 append "HAN" (半).
 static const char *koku_prefix[12] = {
     "AKTKl", "AKTKl", "AKTKl", "AKE  ", "ASA  ", "ASA  ",
     "HIRU ", "HIRU ", "HIRU ", "KURE ", "YORU ", "YORU ",
 };
 
-// Classic-LCD prefixes for mode 0, 2 characters at TOP_LEFT. Position 1 aliases 1B/1C and
-// 1E/1F to single addresses (see Classic_LCD_Display_Mapping), so a character there only
-// renders correctly if its font byte's B==C and E==F -- verified for all 12 entries here.
+// Classic-LCD prefixes for mode 0, at TOP_LEFT.
 static const char *koku_prefix_classic[12] = {
     "At", "At", "At", "AE", "AA", "AA",
     "H1", "H1", "H1", "KU", "YO", "YO",
@@ -96,11 +73,8 @@ static const char *koku_prefix_classic[12] = {
 
 static const uint8_t koku_digit[12] = { 9, 8, 7, 6, 5, 4, 9, 8, 7, 6, 5, 4 };
 
-// Per koku.csv: only 卯 and 酉 split their four quarters across two different 24ths-of-a-
-// span lengths (卯's 一つ二つ belong to the *previous* night's 24-division; 酉's 三つ四つ
-// belong to the *next* night's). Every other branch's 4 quarters are uniform, all drawn
-// from the current day-span (rough branches) or the current night-span (夜 branches).
-// These tables map a 0-23 "24th of the current span" index to (branch, quarter).
+// Maps a 0-23 "24th of the current span" index to (branch, quarter). 卯 and 酉 are split
+// across two spans (per koku.csv); every other branch's 4 quarters come from one span.
 static const uint8_t day_piece_branch[24] = {
     3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 9, 9,
 };
@@ -216,9 +190,7 @@ static void _wadokei_face_update(wadokei_state_t *state) {
         return;
     }
 
-    // The current span (state->span_start_unix .. state->span_end_unix) is exactly one
-    // full day-span (明六つ〜暮六つ) or one full night-span (暮六つ〜翌明六つ); divide it
-    // into 24 equal "koku.csv pieces" and look up which branch/quarter that piece is.
+    // Divide the current span into 24 equal pieces and look up which branch/quarter it is.
     uint32_t span_len = state->span_end_unix - state->span_start_unix;
     uint32_t elapsed = now_unix - state->span_start_unix;
     uint32_t piece_len = span_len / 24;
@@ -233,10 +205,7 @@ static void _wadokei_face_update(wadokei_state_t *state) {
             watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)branch_names[branch_index], (char *)branch_names[branch_index]);
             watch_display_text(WATCH_POSITION_BOTTOM, (char *)quarter_names[quarter_index]);
         } else {
-            // Classic has no TOP row here -- everything lives in BOTTOM's 6 characters
-            // instead. Mode 0's classic branch (below) writes a prefix to TOP_LEFT; this mode
-            // never touches it, so blank it explicitly or a mode-0-to-1 switch would leave
-            // that prefix on screen indefinitely.
+            // Blank TOP_LEFT explicitly: mode 0 leaves a prefix there that this mode doesn't use.
             watch_display_text(WATCH_POSITION_TOP_LEFT, "  ");
             watch_display_text(WATCH_POSITION_BOTTOM, (char *)branch_names_classic[branch_index]);
             watch_display_text(WATCH_POSITION_SECONDS, (char *)quarter_names_classic[quarter_index]);
@@ -254,10 +223,6 @@ static void _wadokei_face_update(wadokei_state_t *state) {
         watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)prefix, (char *)prefix);
         watch_display_text(WATCH_POSITION_BOTTOM, buf);
     } else {
-        // Classic: prefix in TOP_LEFT (see koku_prefix_classic's own comment on its position-1
-        // aliasing). BOTTOM gets a leading blank, then the digit (position 5, no aliasing, so
-        // any digit 4-9 is safe), then "han " or 4 blanks -- "han"'s h/a land on positions 6/7,
-        // both clear of the pitfalls that affect other letters there.
         watch_display_text(WATCH_POSITION_TOP_LEFT, (char *)koku_prefix_classic[branch_index]);
         snprintf(buf, sizeof(buf), half ? " %dhan " : " %d    ", digit);
         watch_display_text(WATCH_POSITION_BOTTOM, buf);
@@ -294,12 +259,7 @@ bool wadokei_face_loop(movement_event_t event, void *context) {
             _wadokei_face_update(state);
             break;
         case EVENT_TICK:
-            // The koku/branch shown only ever changes a handful of times a day (each span
-            // is roughly an hour or two), so there's no need to redraw every second --
-            // once a minute is plenty, matching EVENT_LOW_ENERGY_UPDATE's own cadence below.
-            // Movement itself still ticks at a minimum of 1 Hz regardless (there's no lower
-            // frequency to request), so this doesn't change how often we wake up, just how
-            // often we bother rewriting the display once we do.
+            // Redraw once a minute -- the koku/branch shown rarely changes.
             if (movement_get_local_date_time().unit.second != 0) break;
             _wadokei_face_update(state);
             break;
