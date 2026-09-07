@@ -39,22 +39,25 @@
 #include "sunriset.h"
 
 #define LUNAR_DAYS 29.53058770576
-#define NUM_PHASES 10
+#define NUM_PHASES 12
 
 // Not math.h's M_PI (not guaranteed by plain C11) -- same literal sunriset.c uses.
 #define MOON_DEGRAD (3.1415926535897932384 / 180.0)
 
-// 12 breakpoints for the 11 phase_index windows (0..10) below -- the crescent windows each
-// give up their outermost 1-day sliver to a new adjacent sliver window; the (already narrow)
-// quarter/full windows are untouched.
-static const float phase_changes[] = {0, 1, 2, 6.38264692644, 8.38264692644, 13.76529385288, 15.76529385288, 21.14794077932, 23.14794077932, 27.53058770576, 28.53058770576, 29.53058770576};
+// 14 breakpoints for the 13 phase_index windows (0..12) below -- the crescent windows each
+// give up their outermost 1-day sliver to a new adjacent sliver window, and the two gibbous
+// windows are each split down the middle to make room for an extra gibbous phase closer to
+// full; the (already narrow) quarter/full windows are untouched. These are proportions of the
+// mean LUNAR_DAYS (note the last entry equals it exactly) -- _update() scales them by this
+// lunation's actual/mean length ratio rather than re-deriving separate per-phase breakpoints.
+static const float phase_changes[] = {0, 1, 2, 6.38264692644, 8.38264692644, 11.07397038966, 13.76529385288, 15.76529385288, 18.4566173161, 21.14794077932, 23.14794077932, 27.53058770576, 28.53058770576, 29.53058770576};
 
 // ASCII-art moon phase bars: 4 cells drawn across WATCH_POSITION_HOURS + WATCH_POSITION_MINUTES
 // (raw positions 4-7). '=' and '|' are drawn via raw segments in _draw_phase_bar rather than
 // the font: no character combines exactly the top+bottom segments '=' needs, and the font's
 // own '|' draws both verticals instead of just one edge. Written waxing-from-the-left; _update
 // mirrors this to waxing-from-the-right for the (northern-hemisphere) default case. Indices 0
-// and 10 are both "new" (the instant of new moon isn't itself a displayed state), giving 10
+// and 12 are both "new" (the instant of new moon isn't itself a displayed state), giving 12
 // distinct phases per cycle.
 static const char *const ascii_art_moon[NUM_PHASES + 1] = {
     "    ", // 0: new
@@ -62,12 +65,14 @@ static const char *const ascii_art_moon[NUM_PHASES + 1] = {
     "[   ", // 2: waxing crescent
     "[=  ", // 3: first quarter (half)
     "[== ", // 4: waxing gibbous
-    "[==]", // 5: full
-    " ==]", // 6: waning gibbous
-    "  =]", // 7: last quarter (half)
-    "   ]", // 8: waning crescent
-    "   |", // 9: sliver, just waned
-    "    ", // 10: new
+    "[===", // 5: waxing gibbous
+    "[==]", // 6: full
+    "===]", // 7: waning gibbous
+    " ==]", // 8: waning gibbous
+    "  =]", // 9: last quarter (half)
+    "   ]", // 10: waning crescent
+    "   |", // 11: sliver, just waned
+    "    ", // 12: new
 };
 
 // Returns whether a location has been set (see set_location_face, or sunrise_sunset_face's
@@ -690,21 +695,31 @@ static double _moon_new_moon_jde(double k) {
     return jde + correction;
 }
 
-// Age of the moon (days since the preceding new moon). k starts as a floor()'d estimate from
-// the mean rate, which the periodic correction can shift across a lunation boundary -- the
-// checks below re-test the adjacent lunation so the result is always relative to the true
-// preceding new moon.
-static double _moon_age_days(uint32_t now_unix) {
+// Age of the moon (days since the preceding new moon), and -- via *lunation_days, if non-NULL
+// -- this lunation's actual length (days to the following new moon). The real synodic month
+// varies ~29.18-29.93 days (elliptical orbit) rather than sitting at the fixed LUNAR_DAYS mean,
+// so _update() scales phase_changes' fixed fractions by lunation_days/LUNAR_DAYS instead of
+// assuming every lunation is the same length. k starts as a floor()'d estimate from the mean
+// rate, which the periodic correction can shift across a lunation boundary -- the checks below
+// re-test the adjacent lunation so jde/jde_next always bracket `now` between the true preceding
+// and following new moons (an extra _moon_new_moon_jde call, only in the rare case that shift
+// actually happens).
+static double _moon_age_days(uint32_t now_unix, double *lunation_days) {
     double jd = (double) now_unix / 86400.0 + 2440587.5;
     double k = floor((jd - 2451550.09766) / LUNAR_DAYS);
     double jde = _moon_new_moon_jde(k);
+    double jde_next;
     if (jde > jd) {
-        k -= 1.0;
-        jde = _moon_new_moon_jde(k);
+        jde_next = jde;
+        jde = _moon_new_moon_jde(k - 1.0);
     } else {
-        double jde_next = _moon_new_moon_jde(k + 1.0);
-        if (jde_next <= jd) jde = jde_next;
+        jde_next = _moon_new_moon_jde(k + 1.0);
+        if (jde_next <= jd) {
+            jde = jde_next;
+            jde_next = _moon_new_moon_jde(k + 2.0);
+        }
     }
+    if (lunation_days) *lunation_days = jde_next - jde;
     return jd - jde;
 }
 
@@ -716,11 +731,15 @@ static void _update(moon_phase_ascii_state_t *state) {
     // timezone offset a second time, silently shifting `now` away from true UTC.
     uint32_t now = watch_rtc_get_unix_time() + state->offset;
     watch_date_time_t date_time = watch_utility_date_time_from_unix_time(now, movement_get_current_timezone_offset());
-    double currentday = _moon_age_days(now);
+    double lunation_days;
+    double currentday = _moon_age_days(now, &lunation_days);
     uint8_t phase_index = 0;
 
+    // phase_changes was built against the mean LUNAR_DAYS; scale it to this lunation's actual
+    // length so a short or long month doesn't drift the phase boundaries by up to half a day.
+    double phase_scale = lunation_days / LUNAR_DAYS;
     for(phase_index = 0; phase_index <= NUM_PHASES; phase_index++) {
-        if (currentday > phase_changes[phase_index] && currentday <= phase_changes[phase_index + 1]) break;
+        if (currentday > phase_changes[phase_index] * phase_scale && currentday <= phase_changes[phase_index + 1] * phase_scale) break;
     }
 
     // Top: moon age in days with a decimal point -- "15.4" rather than digit-only "154"
@@ -765,7 +784,7 @@ static void _update(moon_phase_ascii_state_t *state) {
             cells[i] = c;
         }
     }
-    // Eclipses only happen at full moon, so this only matters when phase_index == 4, but it's
+    // Eclipses only happen at full moon, so this only matters when phase_index == 6, but it's
     // harmless to always check. Unlike a solar eclipse, a lunar eclipse is location-independent
     // (same moment for every observer), so no location_set check is needed here -- only
     // calendar mode's "visible from here" indicator needs it. `now` is already absolute UTC,

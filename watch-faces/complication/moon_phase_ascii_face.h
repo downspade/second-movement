@@ -41,11 +41,12 @@
  * " 52").
  *
  * Hours/minutes positions: a 4-character bar that sweeps as the moon waxes
- * and wanes, 10 states per cycle -- blank for new, "   |" a hair-thin sliver
+ * and wanes, 12 states per cycle -- blank for new, "   |" a hair-thin sliver
  * just starting to wax, "[   " a waxing crescent, "[=  " first quarter,
- * "[== " waxing gibbous, "[==]" full, " ==]" waning gibbous, "  =]" last
- * quarter, "   ]" a waning crescent, and "|   " a sliver having just
- * finished waning, back to blank for new. Waxes from the right for the
+ * "[== " waxing gibbous, "[===" a waxing gibbous just shy of full, "[==]"
+ * full, "===]" a waning gibbous just past full, " ==]" waning gibbous,
+ * "  =]" last quarter, "   ]" a waning crescent, and "|   " a sliver having
+ * just finished waning, back to blank for new. Waxes from the right for the
  * (default) northern hemisphere, mirrored for the southern hemisphere.
  *
  * Seconds position: the day of the month.
