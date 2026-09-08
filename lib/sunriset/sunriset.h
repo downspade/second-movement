@@ -26,6 +26,11 @@ int __sunriset__( int year, int month, int day, double lon, double lat,
 
 void sun_RA_dec( double d, double *RA, double *dec, double *r );
 
+/* Computes the Sun's geometric ecliptic longitude (0-360 degrees) at the instant
+   given by a UT calendar date and hour. Wraps the same low-precision sunpos()
+   model used internally for rise/set, so its accuracy characteristics match. */
+double sun_ecliptic_longitude( int year, int month, int day, double ut_hour );
+
 double revolution( double x );
 
 double rev180( double x );

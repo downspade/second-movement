@@ -232,6 +232,15 @@ static void sunpos( double d, double *lon, double *r )
             *lon -= 360.0;                   /* Make it 0..360 degrees */
 }
 
+
+double sun_ecliptic_longitude( int year, int month, int day, double ut_hour )
+{
+      double d = days_since_2000_Jan_0(year, month, day) + ut_hour / 24.0;
+      double lon, r;
+      sunpos( d, &lon, &r );
+      return lon;
+}
+
 void sun_RA_dec( double d, double *RA, double *dec, double *r )
 /******************************************************/
 /* Computes the Sun's equatorial coordinates RA, Decl */

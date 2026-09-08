@@ -25,11 +25,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 #include "kyureki_face.h"
 #include "watch.h"
 #include "watch_utility.h"
 #include "watch_common_display.h"
 #include "kyureki_table_data.h"
+#include "sekki_names_data.h"
+#include "sunriset.h"
 
 // 六曜: 先勝,友引,先負,仏滅,大安,赤口, for WATCH_POSITION_TOP (custom LCD).
 static const char *rokuyo_names[6] = {
@@ -125,6 +128,132 @@ static watch_date_time_t _kyureki_shift_day(watch_date_time_t day, int32_t delta
     return watch_utility_date_time_from_unix_time(timestamp, 0);
 }
 
+// ecliptic longitude (degrees) of term index 0, 立春; each subsequent term is +15 degrees.
+#define SEKKI_BASE_LONGITUDE 315.0
+#define SEKKI_COUNT 24
+// mean rate of the Sun's apparent motion along the ecliptic, degrees/day (365.2422-day year).
+#define SEKKI_DEG_PER_DAY (360.0 / 365.2422)
+
+static double _sekki_solar_longitude_unix(uint32_t timestamp) {
+    watch_date_time_t dt = watch_utility_date_time_from_unix_time(timestamp, 0);
+    double hour = dt.unit.hour + dt.unit.minute / 60.0 + dt.unit.second / 3600.0;
+    return sun_ecliptic_longitude(dt.unit.year + WATCH_RTC_REFERENCE_YEAR, dt.unit.month, dt.unit.day, hour);
+}
+
+// Newton's method (constant-slope approximation of the Sun's motion, which is nearly
+// linear over the few-day spans this is called across) for the unix time nearest
+// guess_unix at which the Sun's ecliptic longitude equals target_lon (0-360 degrees).
+static uint32_t _sekki_solve_unix(double target_lon, int64_t guess_unix) {
+    int64_t t = guess_unix;
+    for (uint8_t iter = 0; iter < 8; iter++) {
+        double diff = target_lon - _sekki_solar_longitude_unix((uint32_t)t);
+        while (diff > 180.0) diff -= 360.0;
+        while (diff <= -180.0) diff += 360.0;
+        if (fabs(diff) < 1e-4) break;
+        t += (int64_t)llround((diff / SEKKI_DEG_PER_DAY) * 86400.0);
+    }
+    return (uint32_t)t;
+}
+
+// Determines the term at `offset_terms` from the one nearest to today (0 = whichever of
+// the term just passed or the term still to come is closer to `now`, 1 = the next one
+// after that, -1 = the one before it, etc.), and stores its index and Gregorian date
+// into state.
+static void _sekki_compute(kyureki_state_t *state, watch_date_time_t now, int32_t offset_terms) {
+    // Unlike the lunar calendar above (which only ever shifts by whole days, so it can get
+    // away with treating local time as if it were UTC -- see _kyureki_shift_day), a solar
+    // term's exact crossing instant matters down to the hour: the term is conventionally
+    // considered to fall on whichever LOCAL calendar day contains that instant, so `now`
+    // and the solved term times all need to go through the wearer's real UTC offset, not 0.
+    int32_t utc_offset = movement_get_current_timezone_offset();
+    uint32_t now_unix = watch_utility_date_time_to_unix_time(now, utc_offset);
+    double now_lon = _sekki_solar_longitude_unix(now_unix);
+
+    double phase = now_lon - SEKKI_BASE_LONGITUDE; // degrees past term 0, in [0, 360)
+    while (phase < 0.0) phase += 360.0;
+    while (phase >= 360.0) phase -= 360.0;
+
+    int32_t prev_index = (int32_t)(phase / 15.0); // last term at/before `now`
+    int32_t next_index = prev_index + 1;           // first term after `now`
+
+    // Solve both neighboring terms' actual dates and compare by real elapsed time rather
+    // than by degree: the Sun's speed along the ecliptic isn't quite constant (faster near
+    // perihelion in January, slower near aphelion in July), so near the midpoint between
+    // two terms, "closer by date" and "closer by degree" can disagree by the better part
+    // of a day.
+    double prev_lon = SEKKI_BASE_LONGITUDE + prev_index * 15.0;
+    while (prev_lon >= 360.0) prev_lon -= 360.0;
+    double next_lon = SEKKI_BASE_LONGITUDE + next_index * 15.0;
+    while (next_lon >= 360.0) next_lon -= 360.0;
+
+    int64_t prev_guess = (int64_t)now_unix - (int64_t)llround((phase - prev_index * 15.0) / SEKKI_DEG_PER_DAY * 86400.0);
+    int64_t next_guess = (int64_t)now_unix + (int64_t)llround((next_index * 15.0 - phase) / SEKKI_DEG_PER_DAY * 86400.0);
+    uint32_t prev_unix = _sekki_solve_unix(prev_lon, prev_guess);
+    uint32_t next_unix = _sekki_solve_unix(next_lon, next_guess);
+
+    int32_t nearest_index = (llabs((int64_t)now_unix - (int64_t)prev_unix) <= llabs((int64_t)next_unix - (int64_t)now_unix))
+        ? prev_index : next_index;
+
+    int32_t index = nearest_index + offset_terms;
+    int32_t norm_index = ((index % SEKKI_COUNT) + SEKKI_COUNT) % SEKKI_COUNT;
+
+    uint32_t term_unix;
+    if (index == prev_index) {
+        term_unix = prev_unix;
+    } else if (index == next_index) {
+        term_unix = next_unix;
+    } else {
+        // Browsed further out than the two neighbors already solved above -- extrapolate a
+        // fresh guess (~15.2 days/term) close enough that the Newton solve converges fast.
+        double target_lon = SEKKI_BASE_LONGITUDE + norm_index * 15.0;
+        if (target_lon >= 360.0) target_lon -= 360.0;
+        double terms_ahead = (double)index - (phase / 15.0);
+        int64_t guess_unix = (int64_t)now_unix + (int64_t)llround(terms_ahead * (365.2422 / SEKKI_COUNT) * 86400.0);
+        term_unix = _sekki_solve_unix(target_lon, guess_unix);
+    }
+
+    state->sekki_term_date = watch_utility_date_time_from_unix_time(term_unix, utc_offset);
+    state->sekki_term_index = (uint8_t)norm_index;
+}
+
+static void _sekki_face_update(kyureki_state_t *state) {
+    watch_date_time_t now = movement_get_local_date_time();
+
+    if (state->sekki_computed_date.unit.year != now.unit.year ||
+        state->sekki_computed_date.unit.month != now.unit.month ||
+        state->sekki_computed_date.unit.day != now.unit.day ||
+        state->sekki_computed_offset != state->sekki_offset) {
+        _sekki_compute(state, now, state->sekki_offset);
+        state->sekki_computed_date = now;
+        state->sekki_computed_offset = state->sekki_offset;
+    }
+
+    uint16_t full_year = state->sekki_term_date.unit.year + WATCH_RTC_REFERENCE_YEAR;
+    char date_buf[7];
+    snprintf(date_buf, sizeof(date_buf), "%2d%2d%02d", state->sekki_term_date.unit.month,
+              state->sekki_term_date.unit.day, full_year % 100);
+
+    if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
+        // watch_display_text() only writes 2 characters for WATCH_POSITION_TOP (same as
+        // TOP_LEFT); the fallback variant is what actually drives all 5 custom-LCD TOP
+        // digits -- same as the rokuyo display above.
+        watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)sekki_names_5[state->sekki_term_index], (char *)sekki_names_5[state->sekki_term_index]);
+        watch_set_decimal_if_available();
+        watch_display_text(WATCH_POSITION_BOTTOM, date_buf);
+    } else {
+        // Classic has no decimal point and no room for both name and date at once --
+        // TOP_LEFT/TOP_RIGHT go unused here, so blank them in case the lunar/rokuyo
+        // display (which does use them) left something behind.
+        watch_display_text(WATCH_POSITION_TOP_LEFT, "  ");
+        watch_display_text(WATCH_POSITION_TOP_RIGHT, "  ");
+        if ((now.unit.second / 2) % 2 == 0) {
+            watch_display_text(WATCH_POSITION_BOTTOM, (char *)sekki_names_6[state->sekki_term_index]);
+        } else {
+            watch_display_text(WATCH_POSITION_BOTTOM, date_buf);
+        }
+    }
+}
+
 static void _kyureki_face_update(kyureki_state_t *state) {
     watch_date_time_t now = movement_get_local_date_time();
     if (state->offset_days) now = _kyureki_shift_day(now, state->offset_days);
@@ -178,6 +307,14 @@ static void _kyureki_face_update(kyureki_state_t *state) {
     watch_display_text(WATCH_POSITION_BOTTOM, buf);
 }
 
+static void _face_update(kyureki_state_t *state) {
+    if (state->sekki_mode) {
+        _sekki_face_update(state);
+    } else {
+        _kyureki_face_update(state);
+    }
+}
+
 void kyureki_face_setup(uint8_t watch_face_index, void ** context_ptr) {
     (void) watch_face_index;
     if (*context_ptr == NULL) {
@@ -190,7 +327,8 @@ void kyureki_face_activate(void *context) {
     kyureki_state_t *state = (kyureki_state_t *)context;
     // force recompute on activation
     state->last_computed_date.reg = 0xFFFFFFFF;
-    _kyureki_face_update(state);
+    state->sekki_computed_date.reg = 0xFFFFFFFF;
+    _face_update(state);
 }
 
 bool kyureki_face_loop(movement_event_t event, void *context) {
@@ -199,32 +337,44 @@ bool kyureki_face_loop(movement_event_t event, void *context) {
     switch (event.event_type) {
         case EVENT_ACTIVATE:
         case EVENT_TICK:
-            _kyureki_face_update(state);
+            _face_update(state);
             break;
         case EVENT_LOW_ENERGY_UPDATE:
             // Matches moon_phase_ascii_face's own day-offset browsing: kill the offset here
-            // too, so a wearer who falls asleep mid-browse wakes up back on today rather than
-            // wherever they'd stepped to.
+            // too, so a wearer who falls asleep mid-browse wakes up back on today (or the
+            // next upcoming term) rather than wherever they'd stepped to.
             state->offset_days = 0;
-            _kyureki_face_update(state);
+            state->sekki_offset = 0;
+            _face_update(state);
             break;
         case EVENT_ALARM_BUTTON_UP:
-            state->offset_days++;
-            _kyureki_face_update(state);
+            if (state->sekki_mode) {
+                state->sekki_offset++;
+            } else {
+                state->offset_days++;
+            }
+            _face_update(state);
             break;
         case EVENT_ALARM_LONG_PRESS:
+            // Toggle between the lunar/rokuyo display and 24-sekki mode, resetting both
+            // modes' browsing offsets so each starts fresh (today / the next term).
+            state->sekki_mode = !state->sekki_mode;
             state->offset_days = 0;
-            _kyureki_face_update(state);
+            state->sekki_offset = 0;
+            _face_update(state);
             break;
         case EVENT_LIGHT_BUTTON_DOWN:
             // Swallow this (rather than falling through to the default handler) so the
             // ordinary "tap Light to illuminate" behavior doesn't fire alongside the
-            // step-back-a-day action below -- same as moon_phase_ascii_face's own Light
-            // handling.
+            // step-back action below -- same as moon_phase_ascii_face's own Light handling.
             break;
         case EVENT_LIGHT_BUTTON_UP:
-            state->offset_days--;
-            _kyureki_face_update(state);
+            if (state->sekki_mode) {
+                state->sekki_offset--;
+            } else {
+                state->offset_days--;
+            }
+            _face_update(state);
             break;
         case EVENT_LIGHT_LONG_PRESS:
             movement_illuminate_led();
@@ -239,5 +389,7 @@ bool kyureki_face_loop(movement_event_t event, void *context) {
 void kyureki_face_resign(void *context) {
     kyureki_state_t *state = (kyureki_state_t *)context;
     state->offset_days = 0;
+    state->sekki_mode = false;
+    state->sekki_offset = 0;
     watch_clear_decimal_if_available();
 }
