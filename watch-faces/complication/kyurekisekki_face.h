@@ -30,7 +30,7 @@
  *
  * Displays the current date in the traditional Japanese lunisolar calendar
  * (month, day, and whether the current month is a leap month), looked up from
- * a precomputed table (see kyureki_table_data.h) covering KYUREKI_TABLE_BASE_YEAR
+ * a precomputed table (see kyurekisekki_table_data.h) covering KYUREKI_TABLE_BASE_YEAR
  * through KYUREKI_TABLE_BASE_YEAR + KYUREKI_TABLE_NUM_YEARS - 1.
  *
  * No location needed; this face just reads the current local date.

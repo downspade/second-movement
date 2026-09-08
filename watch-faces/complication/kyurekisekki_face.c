@@ -30,7 +30,7 @@
 #include "watch.h"
 #include "watch_utility.h"
 #include "watch_common_display.h"
-#include "kyureki_table_data.h"
+#include "kyurekisekki_table_data.h"
 #include "kyurekisekki_names_data.h"
 #include "sunriset.h"
 
