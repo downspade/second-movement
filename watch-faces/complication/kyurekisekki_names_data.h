@@ -22,8 +22,8 @@
  * SOFTWARE.
  */
 
-#ifndef SEKKI_NAMES_DATA_H_
-#define SEKKI_NAMES_DATA_H_
+#ifndef KYUREKISEKKI_NAMES_DATA_H_
+#define KYUREKISEKKI_NAMES_DATA_H_
 
 // 二十四節気 (24 solar terms)
 // 立春（RISSHUN) 雨水（USUI) 啓蟄（KEITITSU）
@@ -56,4 +56,4 @@ static const char *sekki_names_6[24] = { // 6 chars, classic LCD BOTTOM (alterna
     "TOHJI ", "SYOKAN", "DAIKAN",
 };
 
-#endif // SEKKI_NAMES_DATA_H_
+#endif // KYUREKISEKKI_NAMES_DATA_H_

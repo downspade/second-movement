@@ -22,8 +22,8 @@
  * SOFTWARE.
  */
 
-#ifndef KYUREKI_FACE_H_
-#define KYUREKI_FACE_H_
+#ifndef KYUREKISEKKI_FACE_H_
+#define KYUREKISEKKI_FACE_H_
 
 /*
  * KYUREKI (JAPANESE LUNISOLAR CALENDAR) FACE
@@ -41,7 +41,7 @@
  * BOTTOM (6 chars): lunar month.day, both right-aligned with no leading zero (e.g. " 8. 5",
  * "12.28"), decimal point lit between them; the last 2 characters show "Ud" when the current
  * month is a leap month, else blank (or, on custom while browsing a non-today date, the
- * solar day-of-month instead -- see kyureki_face.c's own comment on that).
+ * solar day-of-month instead -- see kyurekisekki_face.c's own comment on that).
  *
  * Press Alarm to step forward one day at a time (browsing tomorrow's, the day after's, etc.
  * rokuyo and lunar date), Light to step back a day; long-press Alarm to switch into 24-sekki
@@ -56,7 +56,7 @@
  * mode shows whichever term -- the one just passed, or the one still to come -- is nearest
  * to today; from there, Alarm/Light step forward/back through the 24 solar terms themselves
  * (not by day), and long-press Light still illuminates. The term names come from
- * sekki_names_data.h.
+ * kyurekisekki_names_data.h.
  *
  * Term dates aren't looked up from a table (unlike the lunar calendar above): the 24 terms
  * are just the 24 points where the sun's ecliptic longitude is a multiple of 15 degrees
@@ -100,17 +100,17 @@ typedef struct {
     watch_date_time_t sekki_term_date; // cached Gregorian date of that term
 } kyureki_state_t;
 
-void kyureki_face_setup(uint8_t watch_face_index, void ** context_ptr);
-void kyureki_face_activate(void *context);
-bool kyureki_face_loop(movement_event_t event, void *context);
-void kyureki_face_resign(void *context);
+void kyurekisekki_face_setup(uint8_t watch_face_index, void ** context_ptr);
+void kyurekisekki_face_activate(void *context);
+bool kyurekisekki_face_loop(movement_event_t event, void *context);
+void kyurekisekki_face_resign(void *context);
 
-#define kyureki_face ((const watch_face_t){ \
-    kyureki_face_setup, \
-    kyureki_face_activate, \
-    kyureki_face_loop, \
-    kyureki_face_resign, \
+#define kyurekisekki_face ((const watch_face_t){ \
+    kyurekisekki_face_setup, \
+    kyurekisekki_face_activate, \
+    kyurekisekki_face_loop, \
+    kyurekisekki_face_resign, \
     NULL, \
 })
 
-#endif // KYUREKI_FACE_H_
+#endif // KYUREKISEKKI_FACE_H_

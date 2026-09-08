@@ -37,7 +37,7 @@
 | hydration_face.h | 1日の水分摂取量を記録・管理 |
 | interval_face.h | HIITなどに使える9スロットのインターバルタイマー |
 | kitchen_conversions_face.h | 料理の単位換算(計量カップ・スプーン等) |
-| kyureki_face.h | 日本の旧暦(太陰太陽暦)・六曜を表示 |
+| kyurekisekki_face.h | 日本の旧暦(太陰太陽暦)・六曜を表示 |
 | lander_face.h | 月面着陸ゲームのリメイク |
 | minute_repeater_face.h | LIGHT長押しで現在時刻をビープ音で読み上げる「ミニッツリピーター」 |
 | moon_phase_ascii_face.h | 月相をASCIIアート風に表示(カスタムLCD専用) |

@@ -26,12 +26,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
-#include "kyureki_face.h"
+#include "kyurekisekki_face.h"
 #include "watch.h"
 #include "watch_utility.h"
 #include "watch_common_display.h"
 #include "kyureki_table_data.h"
-#include "sekki_names_data.h"
+#include "kyurekisekki_names_data.h"
 #include "sunriset.h"
 
 // 六曜: 先勝,友引,先負,仏滅,大安,赤口, for WATCH_POSITION_TOP (custom LCD).
@@ -315,7 +315,7 @@ static void _face_update(kyureki_state_t *state) {
     }
 }
 
-void kyureki_face_setup(uint8_t watch_face_index, void ** context_ptr) {
+void kyurekisekki_face_setup(uint8_t watch_face_index, void ** context_ptr) {
     (void) watch_face_index;
     if (*context_ptr == NULL) {
         *context_ptr = malloc(sizeof(kyureki_state_t));
@@ -323,7 +323,7 @@ void kyureki_face_setup(uint8_t watch_face_index, void ** context_ptr) {
     }
 }
 
-void kyureki_face_activate(void *context) {
+void kyurekisekki_face_activate(void *context) {
     kyureki_state_t *state = (kyureki_state_t *)context;
     // force recompute on activation
     state->last_computed_date.reg = 0xFFFFFFFF;
@@ -331,7 +331,7 @@ void kyureki_face_activate(void *context) {
     _face_update(state);
 }
 
-bool kyureki_face_loop(movement_event_t event, void *context) {
+bool kyurekisekki_face_loop(movement_event_t event, void *context) {
     kyureki_state_t *state = (kyureki_state_t *)context;
 
     switch (event.event_type) {
@@ -386,7 +386,7 @@ bool kyureki_face_loop(movement_event_t event, void *context) {
     return true;
 }
 
-void kyureki_face_resign(void *context) {
+void kyurekisekki_face_resign(void *context) {
     kyureki_state_t *state = (kyureki_state_t *)context;
     state->offset_days = 0;
     state->sekki_mode = false;
