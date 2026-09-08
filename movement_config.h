@@ -28,7 +28,7 @@
 #include "movement_faces.h"
 
 const watch_face_t watch_faces[] = {
-    fluid_face,
+    kyureki_face,
 };
 
 #define MOVEMENT_NUM_FACES (sizeof(watch_faces) / sizeof(watch_face_t))
