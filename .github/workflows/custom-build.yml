@@ -1,0 +1,105 @@
+# フェイスの組み合わせを指定してビルドする。Actions タブから手で起動する。
+# 既存の build.yml（push のたびに 8 通りを全部ビルドするもの）とは別物で、
+# こちらは movement_config.h の watch_faces[] を入力に応じて差し替える。
+name: Build (custom faces)
+
+on:
+  workflow_dispatch:
+    inputs:
+      faces:
+        description: 'ローテーションに出すフェイス（カンマ区切り・この順に並ぶ）'
+        required: true
+        default: 'clock_face,wadokei_face,kyureki_face,counter_term_face,moon_phase_ascii_face,fluid_face'
+      secondary:
+        description: 'MODE 長押し側に回すフェイス（通常ローテーションから外れる）'
+        required: true
+        default: 'temperature_display_face,alarm_face,voltage_face,settings_face,set_timelocation_face'
+      board:
+        description: '基板'
+        required: true
+        default: 'sensorwatch_pro'
+        type: choice
+        options: [sensorwatch_pro, sensorwatch_red, sensorwatch_green, sensorwatch_blue]
+      display:
+        description: '液晶'
+        required: true
+        default: 'custom'
+        type: choice
+        options: [custom, classic]
+      simulator:
+        description: 'エミュレータ（ブラウザ版）も一緒に作る'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  firmware:
+    container:
+      image: ghcr.io/armmbed/mbed-os-env:latest
+    runs-on: ubuntu-latest
+    env:
+      BOARD: ${{ inputs.board }}
+      DISPLAY: ${{ inputs.display }}
+      FACES: ${{ inputs.faces }}
+      SECONDARY: ${{ inputs.secondary }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Ensure workspace directory is defined as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: フェイスの構成を差し替える
+        run: python3 .github/scripts/set_faces.py
+
+      - name: Compile movement firmware
+        run: make
+
+      - name: 名前を付ける
+        run: |
+          mkdir -p out
+          cp build/firmware.uf2 "out/${BOARD}-display-${DISPLAY}-movement.uf2"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.board }}-display-${{ inputs.display }}-custom-uf2
+          path: out/*.uf2
+          if-no-files-found: error
+
+  simulator:
+    if: ${{ inputs.simulator }}
+    container:
+      image: emscripten/emsdk
+    runs-on: ubuntu-latest
+    env:
+      BOARD: ${{ inputs.board }}
+      DISPLAY: ${{ inputs.display }}
+      FACES: ${{ inputs.faces }}
+      SECONDARY: ${{ inputs.secondary }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Ensure workspace directory is defined as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: フェイスの構成を差し替える
+        run: python3 .github/scripts/set_faces.py
+
+      - name: Compile movement
+        run: emmake make
+
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.board }}-display-${{ inputs.display }}-custom-sim
+          path: |
+            build-sim/firmware.html
+            build-sim/firmware.js
+            build-sim/firmware.wasm
+          if-no-files-found: error
