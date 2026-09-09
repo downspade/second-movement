@@ -28,7 +28,17 @@
 #include "movement_faces.h"
 
 const watch_face_t watch_faces[] = {
+    minute_repeater_face,
+    fluid_face,
+    fast_stopwatch_face,
+    countdown_face,
+    moon_phase_ascii_face,
     wadokei_face,
+    kyurekisekki_face,
+    alarm_face,
+    voltage_face,
+    settings_face,
+    set_timelocation_face,
 };
 
 #define MOVEMENT_NUM_FACES (sizeof(watch_faces) / sizeof(watch_face_t))
@@ -39,7 +49,7 @@ const watch_face_t watch_faces[] = {
  * Some folks also like to use this to hide the preferences and time set faces from the normal rotation.
  * If you don't want any faces to be excluded, set this to 0 and a long Mode press will have no effect.
  */
-#define MOVEMENT_SECONDARY_FACE_INDEX 0 //(MOVEMENT_NUM_FACES - 4)
+#define MOVEMENT_SECONDARY_FACE_INDEX (MOVEMENT_NUM_FACES - 4)
 
 /* Custom hourly chime tune. Check movement_custom_signal_tunes.h for options. */
 #define SIGNAL_TUNE_DEFAULT
