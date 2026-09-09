@@ -40,7 +40,7 @@ static const char *sekki_names_5[24] = { // 5 chars, custom LCD TOP
     "RIKKA", "SYMAN", "BOSHU",
     "GESHl", "SYOSH", "TAISH",
     "RISSY", "SHSHO", "HAKRO",
-    "SYUBN", "KANRO", "SOSOU",
+    "SYUBN", "KANRO", "SOKOU",
     "RITTO", "SYOST", "TAIST",
     "TOHJl", "SYOKN", "DAIKN",
 };
