@@ -44,7 +44,7 @@ static const char *branch_names[12] = {
 
 // One quarter name per position (一つ/二つ/三つ/四つ).
 static const char *quarter_names[4] = {
-    "Hitotu", "Futatu", "N7ittu ", "Yottu ",
+    "Hitotu", "Futatu", "N7ittu", "Yottu ",
 };
 
 // Classic-LCD branch names for mode 1.
