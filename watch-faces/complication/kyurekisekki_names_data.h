@@ -25,6 +25,17 @@
 #ifndef KYUREKISEKKI_NAMES_DATA_H_
 #define KYUREKISEKKI_NAMES_DATA_H_
 
+// 六曜: 先勝,友引,先負,仏滅,大安,赤口, for WATCH_POSITION_TOP (custom LCD).
+static const char *rokuyo_names_custom[6] = {
+    "SENSY", "TOMBK", "SEMBU", "BTMTS", "TAIAN", "SHAKK",
+};
+
+// 六曜 abbreviations for TOP_LEFT on classic.
+static const char *rokuyo_names_classic[6] = {
+    "SE", "TB", "SB", "Bt", "TA", "SH",
+};
+
+
 // 二十四節気 (24 solar terms)
 // 立春（RISSHUN) 雨水（USUI) 啓蟄（KEITITSU）
 // 春分（SHUNBUN）清明（SEIMEI）穀雨（KOKUU）

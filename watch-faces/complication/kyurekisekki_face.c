@@ -34,16 +34,6 @@
 #include "kyurekisekki_names_data.h"
 #include "sunriset.h"
 
-// 六曜: 先勝,友引,先負,仏滅,大安,赤口, for WATCH_POSITION_TOP (custom LCD).
-static const char *rokuyo_names[6] = {
-    "SENSY", "TOMBK", "SEMBU", "BTMTS", "TAIAN", "SHAKK",
-};
-
-// 六曜 abbreviations for TOP_LEFT on classic.
-static const char *rokuyo_names_classic[6] = {
-    "SE", "TB", "SB", "Bt", "TA", "SH",
-};
-
 static uint16_t _kyureki_day_of_year(uint8_t month, uint8_t day, uint16_t year) {
     uint16_t doy = 0;
     for (uint8_t m = 1; m < month; m++) doy += watch_utility_days_in_month(m, year);
@@ -175,10 +165,16 @@ static void _sekki_compute(kyureki_state_t *state, watch_date_time_t now, int32_
     uint32_t prev_unix = _sekki_solve_unix(prev_lon, prev_guess);
     uint32_t next_unix = _sekki_solve_unix(next_lon, next_guess);
 
-    int32_t nearest_index = (llabs((int64_t)now_unix - (int64_t)prev_unix) <= llabs((int64_t)next_unix - (int64_t)now_unix))
-        ? prev_index : next_index;
+    // "Current" term is the one that starts today; if neither has started today yet
+    // (today isn't a transition day), that's prev_index, which by construction always
+    // started on or before today.
+    watch_date_time_t next_date = watch_utility_date_time_from_unix_time(next_unix, utc_offset);
+    bool next_starts_today = (next_date.unit.year == now.unit.year &&
+                               next_date.unit.month == now.unit.month &&
+                               next_date.unit.day == now.unit.day);
+    int32_t current_index = next_starts_today ? next_index : prev_index;
 
-    int32_t index = nearest_index + offset_terms;
+    int32_t index = current_index + offset_terms;
     int32_t norm_index = ((index % SEKKI_COUNT) + SEKKI_COUNT) % SEKKI_COUNT;
 
     uint32_t term_unix;
@@ -254,7 +250,7 @@ static void _kyureki_face_update(kyureki_state_t *state) {
     uint8_t rokuyo_index = (state->month_number + state->day_of_month - 2) % 6;
     // Classic's fallback path truncates to 2 characters, so it needs rokuyo_names_classic's own abbreviation.
     if (watch_get_lcd_type() == WATCH_LCD_TYPE_CUSTOM) {
-        watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)rokuyo_names[rokuyo_index], (char *)rokuyo_names[rokuyo_index]);
+        watch_display_text_with_fallback(WATCH_POSITION_TOP, (char *)rokuyo_names_custom[rokuyo_index], (char *)rokuyo_names_custom[rokuyo_index]);
     } else {
         watch_display_text(WATCH_POSITION_TOP_LEFT, (char *)rokuyo_names_classic[rokuyo_index]);
         // While browsing, shows the solar day-of-month rather than the raw offset count.
